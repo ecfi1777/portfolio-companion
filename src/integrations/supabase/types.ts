@@ -43,7 +43,7 @@ export type Database = {
       }
       positions: {
         Row: {
-          account: string | null
+          account: Json | null
           category: Database["public"]["Enums"]["position_category"] | null
           company_name: string | null
           cost_basis: number | null
@@ -60,7 +60,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
-          account?: string | null
+          account?: Json | null
           category?: Database["public"]["Enums"]["position_category"] | null
           company_name?: string | null
           cost_basis?: number | null
@@ -77,7 +77,7 @@ export type Database = {
           user_id: string
         }
         Update: {
-          account?: string | null
+          account?: Json | null
           category?: Database["public"]["Enums"]["position_category"] | null
           company_name?: string | null
           cost_basis?: number | null
