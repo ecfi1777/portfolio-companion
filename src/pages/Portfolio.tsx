@@ -1,9 +1,11 @@
-import { useEffect, useState, Fragment } from "react";
+import { useEffect, useState, useCallback, Fragment } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { DollarSign, TrendingUp, Hash, ChevronRight } from "lucide-react";
+import { DollarSign, TrendingUp, Hash, ChevronRight, Upload } from "lucide-react";
+import { UpdatePortfolioModal } from "@/components/UpdatePortfolioModal";
 import type { Tables } from "@/integrations/supabase/types";
 
 type Position = Tables<"positions">;
@@ -35,29 +37,29 @@ export default function Portfolio() {
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+
+  const fetchData = useCallback(async () => {
+    if (!user) return;
+    const [posRes, sumRes] = await Promise.all([
+      supabase
+        .from("positions")
+        .select("*")
+        .order("current_value", { ascending: false }),
+      supabase
+        .from("portfolio_summary")
+        .select("*")
+        .maybeSingle(),
+    ]);
+
+    if (posRes.data) setPositions(posRes.data);
+    if (sumRes.data) setSummary(sumRes.data);
+    setLoading(false);
+  }, [user]);
 
   useEffect(() => {
-    if (!user) return;
-
-    const fetchData = async () => {
-      const [posRes, sumRes] = await Promise.all([
-        supabase
-          .from("positions")
-          .select("*")
-          .order("current_value", { ascending: false }),
-        supabase
-          .from("portfolio_summary")
-          .select("*")
-          .maybeSingle(),
-      ]);
-
-      if (posRes.data) setPositions(posRes.data);
-      if (sumRes.data) setSummary(sumRes.data);
-      setLoading(false);
-    };
-
     fetchData();
-  }, [user]);
+  }, [fetchData]);
 
   const totalValue = positions.reduce((sum, p) => sum + (p.current_value ?? 0), 0);
   const cashBalance = summary?.cash_balance ?? 0;
@@ -73,7 +75,15 @@ export default function Portfolio() {
 
   return (
     <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-bold">Portfolio</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Portfolio</h1>
+        <Button onClick={() => setModalOpen(true)}>
+          <Upload className="mr-2 h-4 w-4" />
+          Update Portfolio
+        </Button>
+      </div>
+
+      <UpdatePortfolioModal open={modalOpen} onOpenChange={setModalOpen} onSuccess={fetchData} />
 
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-3">
