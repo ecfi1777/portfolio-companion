@@ -1,3 +1,9 @@
+export interface AccountBreakdown {
+  account: string;
+  shares: number;
+  value: number;
+}
+
 export interface ParsedPosition {
   symbol: string;
   companyName: string;
@@ -5,20 +11,20 @@ export interface ParsedPosition {
   currentPrice: number;
   currentValue: number;
   costBasis: number;
-  account: string;
+  accounts: AccountBreakdown[];
 }
 
 export interface ParseResult {
   positions: ParsedPosition[];
   cashBalance: number;
   errors: string[];
+  fileCount: number;
 }
 
 const CASH_SYMBOLS = ["SPAXX", "FDRXX", "FCASH"];
 
 function cleanNumber(value: string): number {
   if (!value || value === "n/a" || value === "--" || value === "") return 0;
-  // Remove $, commas, and whitespace
   const cleaned = value.replace(/[$,\s]/g, "");
   const num = parseFloat(cleaned);
   return isNaN(num) ? 0 : num;
@@ -28,11 +34,11 @@ function cleanString(value: string): string {
   return value ? value.trim() : "";
 }
 
-export function parseFidelityCSV(csvText: string): ParseResult {
+/** Parse a single Fidelity CSV and return raw (non-aggregated) positions + cash */
+function parseSingleCSV(csvText: string): { positions: ParsedPosition[]; cashBalance: number; errors: string[] } {
   const errors: string[] = [];
   const lines = csvText.split(/\r?\n/);
 
-  // Find header row — Fidelity CSVs may have preamble lines
   let headerIndex = -1;
   for (let i = 0; i < lines.length; i++) {
     const lower = lines[i].toLowerCase();
@@ -40,7 +46,6 @@ export function parseFidelityCSV(csvText: string): ParseResult {
       headerIndex = i;
       break;
     }
-    // Also check for "Account Name/Number" pattern
     if (lower.includes("account") && (lower.includes("symbol") || lower.includes("description"))) {
       headerIndex = i;
       break;
@@ -48,14 +53,12 @@ export function parseFidelityCSV(csvText: string): ParseResult {
   }
 
   if (headerIndex === -1) {
-    errors.push("Could not find a valid header row. Expected columns like Symbol, Quantity/Shares, etc.");
+    errors.push("Could not find a valid header row.");
     return { positions: [], cashBalance: 0, errors };
   }
 
-  // Parse headers — handle trailing spaces
   const headers = parseCSVLine(lines[headerIndex]).map((h) => h.trim().toLowerCase());
 
-  // Map column names to indices (Fidelity uses various column names)
   const colMap = {
     symbol: findCol(headers, ["symbol"]),
     company: findCol(headers, ["description", "security description", "company name", "name"]),
@@ -71,7 +74,7 @@ export function parseFidelityCSV(csvText: string): ParseResult {
     return { positions: [], cashBalance: 0, errors };
   }
 
-  const rawPositions: ParsedPosition[] = [];
+  const positions: ParsedPosition[] = [];
   let cashBalance = 0;
 
   for (let i = headerIndex + 1; i < lines.length; i++) {
@@ -81,56 +84,85 @@ export function parseFidelityCSV(csvText: string): ParseResult {
     const cols = parseCSVLine(line);
     const symbol = cleanString(cols[colMap.symbol] ?? "").toUpperCase();
 
-    // Skip empty or footer rows
     if (!symbol || symbol.startsWith("TOTAL") || symbol === "") continue;
 
     const value = cleanNumber(cols[colMap.value] ?? "");
     const shares = cleanNumber(cols[colMap.shares] ?? "");
 
-    // Detect cash equivalents
     if (CASH_SYMBOLS.includes(symbol) || symbol.includes("**")) {
-      cashBalance += value || shares; // some show cash as value, some as quantity
+      cashBalance += value || shares;
       continue;
     }
 
-    // Skip "Pending Activity" or similar non-position rows
     if (symbol.includes("PENDING") || shares === 0) continue;
 
-    rawPositions.push({
+    const accountName = cleanString(cols[colMap.account] ?? "");
+
+    positions.push({
       symbol,
       companyName: cleanString(cols[colMap.company] ?? ""),
       shares,
       currentPrice: cleanNumber(cols[colMap.price] ?? ""),
       currentValue: value,
       costBasis: cleanNumber(cols[colMap.costBasis] ?? ""),
-      account: cleanString(cols[colMap.account] ?? ""),
+      accounts: accountName ? [{ account: accountName, shares, value }] : [],
     });
   }
 
-  // Aggregate by symbol
-  const aggregated = new Map<string, ParsedPosition>();
-  for (const p of rawPositions) {
+  return { positions, cashBalance, errors };
+}
+
+/** Merge new positions into an existing aggregated map */
+function mergePositions(
+  aggregated: Map<string, ParsedPosition>,
+  newPositions: ParsedPosition[]
+) {
+  for (const p of newPositions) {
     const existing = aggregated.get(p.symbol);
     if (existing) {
       existing.shares += p.shares;
       existing.currentValue += p.currentValue;
       existing.costBasis += p.costBasis;
-      // Keep the higher price (they should be the same across accounts)
       existing.currentPrice = Math.max(existing.currentPrice, p.currentPrice);
-      // Combine account names
-      if (p.account && !existing.account.includes(p.account)) {
-        existing.account = existing.account ? `${existing.account}, ${p.account}` : p.account;
+      // Merge account breakdowns
+      for (const acct of p.accounts) {
+        const existingAcct = existing.accounts.find((a) => a.account === acct.account);
+        if (existingAcct) {
+          existingAcct.shares += acct.shares;
+          existingAcct.value += acct.value;
+        } else {
+          existing.accounts.push({ ...acct });
+        }
       }
     } else {
-      aggregated.set(p.symbol, { ...p });
+      aggregated.set(p.symbol, { ...p, accounts: p.accounts.map((a) => ({ ...a })) });
     }
+  }
+}
+
+/** Parse and merge multiple Fidelity CSVs into a single result */
+export function parseFidelityCSVs(csvTexts: string[]): ParseResult {
+  const aggregated = new Map<string, ParsedPosition>();
+  let cashBalance = 0;
+  const allErrors: string[] = [];
+
+  for (const text of csvTexts) {
+    const result = parseSingleCSV(text);
+    allErrors.push(...result.errors);
+    cashBalance += result.cashBalance;
+    mergePositions(aggregated, result.positions);
   }
 
   const positions = Array.from(aggregated.values()).sort(
     (a, b) => b.currentValue - a.currentValue
   );
 
-  return { positions, cashBalance, errors };
+  return { positions, cashBalance, errors: allErrors, fileCount: csvTexts.length };
+}
+
+/** Convenience: parse a single CSV (backwards-compatible) */
+export function parseFidelityCSV(csvText: string): ParseResult {
+  return parseFidelityCSVs([csvText]);
 }
 
 function findCol(headers: string[], candidates: string[]): number {

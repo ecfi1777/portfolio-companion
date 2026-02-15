@@ -1,12 +1,13 @@
 import { useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { parseFidelityCSV, type ParsedPosition, type ParseResult } from "@/lib/csv-parser";
+import { parseFidelityCSVs, type ParsedPosition, type ParseResult } from "@/lib/csv-parser";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { Upload, FileText, Check, AlertTriangle } from "lucide-react";
+import { Upload, FileText, Check, AlertTriangle, Plus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 const fmt = (n: number) =>
@@ -16,23 +17,28 @@ export default function Import() {
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const [csvTexts, setCsvTexts] = useState<string[]>([]);
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
   const [importing, setImporting] = useState(false);
   const [dragOver, setDragOver] = useState(false);
 
-  const handleFile = useCallback((file: File) => {
+  const addFile = useCallback((file: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       const text = e.target?.result as string;
-      const result = parseFidelityCSV(text);
-      setParseResult(result);
-      if (result.errors.length > 0) {
-        toast({
-          title: "Parsing warnings",
-          description: result.errors.join("; "),
-          variant: "destructive",
-        });
-      }
+      setCsvTexts((prev) => {
+        const next = [...prev, text];
+        const result = parseFidelityCSVs(next);
+        setParseResult(result);
+        if (result.errors.length > 0) {
+          toast({
+            title: "Parsing warnings",
+            description: result.errors.join("; "),
+            variant: "destructive",
+          });
+        }
+        return next;
+      });
     };
     reader.readAsText(file);
   }, [toast]);
@@ -42,14 +48,16 @@ export default function Import() {
       e.preventDefault();
       setDragOver(false);
       const file = e.dataTransfer.files[0];
-      if (file) handleFile(file);
+      if (file) addFile(file);
     },
-    [handleFile]
+    [addFile]
   );
 
   const onFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) handleFile(file);
+    if (file) addFile(file);
+    // Reset so the same file can be re-selected
+    e.target.value = "";
   };
 
   const confirmImport = async () => {
@@ -57,7 +65,6 @@ export default function Import() {
     setImporting(true);
 
     try {
-      // Upsert positions
       for (const p of parseResult.positions) {
         const { error } = await supabase
           .from("positions")
@@ -70,7 +77,7 @@ export default function Import() {
               current_price: p.currentPrice,
               current_value: p.currentValue,
               cost_basis: p.costBasis,
-              account: p.account,
+              account: p.accounts as any,
             },
             { onConflict: "user_id,symbol" }
           );
@@ -78,7 +85,6 @@ export default function Import() {
         if (error) throw error;
       }
 
-      // Upsert portfolio summary
       const { error: sumError } = await supabase
         .from("portfolio_summary")
         .upsert(
@@ -101,45 +107,58 @@ export default function Import() {
     }
   };
 
+  const resetImport = () => {
+    setCsvTexts([]);
+    setParseResult(null);
+  };
+
+  const hasFiles = csvTexts.length > 0;
+
   return (
     <div className="p-6 space-y-6">
       <h1 className="text-2xl font-bold">Import Fidelity CSV</h1>
 
-      {/* Upload area */}
-      {!parseResult && (
-        <Card>
-          <CardContent className="py-12">
-            <div
-              onDrop={onDrop}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragOver(true);
-              }}
-              onDragLeave={() => setDragOver(false)}
-              className={`flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-12 transition-colors ${
-                dragOver ? "border-primary bg-primary/5" : "border-border"
-              }`}
-            >
-              <Upload className="mb-4 h-10 w-10 text-muted-foreground" />
-              <p className="mb-2 text-lg font-medium">Drop your Fidelity CSV here</p>
-              <p className="mb-4 text-sm text-muted-foreground">
-                or click to browse
-              </p>
-              <label>
-                <input
-                  type="file"
-                  accept=".csv"
-                  onChange={onFileSelect}
-                  className="hidden"
-                />
-                <Button variant="outline" asChild>
-                  <span><FileText className="mr-2 h-4 w-4" />Select File</span>
-                </Button>
-              </label>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Upload area — always visible when no files, or compact "add another" when files exist */}
+      <Card>
+        <CardContent className={hasFiles ? "py-4" : "py-12"}>
+          <div
+            onDrop={onDrop}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            className={`flex flex-col items-center justify-center rounded-lg border-2 border-dashed transition-colors ${
+              hasFiles ? "p-6" : "p-12"
+            } ${dragOver ? "border-primary bg-primary/5" : "border-border"}`}
+          >
+            {hasFiles ? (
+              <>
+                <div className="flex items-center gap-3 mb-3">
+                  <Plus className="h-5 w-5 text-muted-foreground" />
+                  <p className="text-sm font-medium">Add another CSV file</p>
+                  <Badge variant="secondary">{csvTexts.length} {csvTexts.length === 1 ? "file" : "files"} loaded</Badge>
+                </div>
+                <label>
+                  <input type="file" accept=".csv" onChange={onFileSelect} className="hidden" />
+                  <Button variant="outline" size="sm" asChild>
+                    <span><FileText className="mr-2 h-4 w-4" />Select File</span>
+                  </Button>
+                </label>
+              </>
+            ) : (
+              <>
+                <Upload className="mb-4 h-10 w-10 text-muted-foreground" />
+                <p className="mb-2 text-lg font-medium">Drop your Fidelity CSV here</p>
+                <p className="mb-4 text-sm text-muted-foreground">or click to browse</p>
+                <label>
+                  <input type="file" accept=".csv" onChange={onFileSelect} className="hidden" />
+                  <Button variant="outline" asChild>
+                    <span><FileText className="mr-2 h-4 w-4" />Select File</span>
+                  </Button>
+                </label>
+              </>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Preview */}
       {parseResult && (
@@ -160,9 +179,7 @@ export default function Import() {
           <div className="grid gap-4 md:grid-cols-2">
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Positions Found
-                </CardTitle>
+                <CardTitle className="text-sm font-medium text-muted-foreground">Positions Found</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{parseResult.positions.length}</div>
@@ -170,9 +187,7 @@ export default function Import() {
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Cash Detected
-                </CardTitle>
+                <CardTitle className="text-sm font-medium text-muted-foreground">Cash Detected</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{fmt(parseResult.cashBalance)}</div>
@@ -190,6 +205,7 @@ export default function Import() {
                   <TableHead className="text-right">Price</TableHead>
                   <TableHead className="text-right">Value</TableHead>
                   <TableHead className="text-right">Cost Basis</TableHead>
+                  <TableHead>Accounts</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -201,6 +217,11 @@ export default function Import() {
                     <TableCell className="text-right">{fmt(p.currentPrice)}</TableCell>
                     <TableCell className="text-right">{fmt(p.currentValue)}</TableCell>
                     <TableCell className="text-right">{fmt(p.costBasis)}</TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
+                      {p.accounts.length > 0
+                        ? p.accounts.map((a) => a.account).join(", ")
+                        : "—"}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -212,7 +233,7 @@ export default function Import() {
               <Check className="mr-2 h-4 w-4" />
               {importing ? "Importing..." : "Confirm Import"}
             </Button>
-            <Button variant="outline" onClick={() => setParseResult(null)}>
+            <Button variant="outline" onClick={resetImport}>
               Cancel
             </Button>
           </div>
