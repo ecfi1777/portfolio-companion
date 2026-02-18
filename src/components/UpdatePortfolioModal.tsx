@@ -179,6 +179,26 @@ export function UpdatePortfolioModal({ open, onOpenChange, onSuccess }: UpdatePo
         if (error) throw error;
       }
 
+      // Upsert CASH position row
+      if (parseResult.cashBalance > 0) {
+        const { error: cashPosError } = await supabase
+          .from("positions")
+          .upsert(
+            {
+              user_id: user.id,
+              symbol: "CASH",
+              company_name: "Cash Balance",
+              shares: parseResult.cashBalance,
+              current_price: 1,
+              current_value: parseResult.cashBalance,
+              cost_basis: parseResult.cashBalance,
+              account: (parseResult.cashAccounts ?? []) as any,
+            },
+            { onConflict: "user_id,symbol" }
+          );
+        if (cashPosError) throw cashPosError;
+      }
+
       const { error: sumError } = await supabase
         .from("portfolio_summary")
         .upsert(
