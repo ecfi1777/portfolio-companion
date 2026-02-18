@@ -95,6 +95,138 @@ export type Database = {
         }
         Relationships: []
       }
+      tags: {
+        Row: {
+          color: string | null
+          created_at: string
+          full_name: string | null
+          id: string
+          is_active: boolean
+          is_system_tag: boolean
+          screen_date: string | null
+          screen_id: string | null
+          screen_name: string | null
+          short_code: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string
+          full_name?: string | null
+          id?: string
+          is_active?: boolean
+          is_system_tag?: boolean
+          screen_date?: string | null
+          screen_id?: string | null
+          screen_name?: string | null
+          short_code: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          color?: string | null
+          created_at?: string
+          full_name?: string | null
+          id?: string
+          is_active?: boolean
+          is_system_tag?: boolean
+          screen_date?: string | null
+          screen_id?: string | null
+          screen_name?: string | null
+          short_code?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      watchlist_entries: {
+        Row: {
+          company_name: string | null
+          created_at: string
+          current_price: number | null
+          date_added: string
+          id: string
+          industry: string | null
+          market_cap: number | null
+          market_cap_category: string | null
+          notes: string | null
+          previous_close: number | null
+          price_when_added: number | null
+          sector: string | null
+          symbol: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          company_name?: string | null
+          created_at?: string
+          current_price?: number | null
+          date_added?: string
+          id?: string
+          industry?: string | null
+          market_cap?: number | null
+          market_cap_category?: string | null
+          notes?: string | null
+          previous_close?: number | null
+          price_when_added?: number | null
+          sector?: string | null
+          symbol: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          company_name?: string | null
+          created_at?: string
+          current_price?: number | null
+          date_added?: string
+          id?: string
+          industry?: string | null
+          market_cap?: number | null
+          market_cap_category?: string | null
+          notes?: string | null
+          previous_close?: number | null
+          price_when_added?: number | null
+          sector?: string | null
+          symbol?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      watchlist_entry_tags: {
+        Row: {
+          assigned_at: string
+          tag_id: string
+          watchlist_entry_id: string
+        }
+        Insert: {
+          assigned_at?: string
+          tag_id: string
+          watchlist_entry_id: string
+        }
+        Update: {
+          assigned_at?: string
+          tag_id?: string
+          watchlist_entry_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "watchlist_entry_tags_tag_id_fkey"
+            columns: ["tag_id"]
+            isOneToOne: false
+            referencedRelation: "tags"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "watchlist_entry_tags_watchlist_entry_id_fkey"
+            columns: ["watchlist_entry_id"]
+            isOneToOne: false
+            referencedRelation: "watchlist_entries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
