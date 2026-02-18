@@ -4,7 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { DollarSign, TrendingUp, Hash, ChevronRight, Upload, ArrowUpDown, Tag } from "lucide-react";
+import { DollarSign, TrendingUp, Hash, ChevronRight, Upload, ArrowUpDown, Tag, Banknote } from "lucide-react";
 import { UpdatePortfolioModal } from "@/components/UpdatePortfolioModal";
 import { CategorySelector } from "@/components/CategorySelector";
 import type { Tables, Database } from "@/integrations/supabase/types";
@@ -72,28 +72,30 @@ export default function Portfolio() {
     fetchData();
   }, [fetchData]);
 
-  // Derived calculations
-  const totalEquity = positions.reduce((sum, p) => sum + (p.current_value ?? 0), 0);
-  const totalCostBasis = positions.reduce((sum, p) => sum + (p.cost_basis ?? 0), 0);
-  const cashBalance = summary?.cash_balance ?? 0;
+  // Derived calculations — exclude CASH row from stock-specific metrics
+  const stockPositions = positions.filter((p) => p.symbol !== "CASH");
+  const cashPosition = positions.find((p) => p.symbol === "CASH");
+  const totalEquity = stockPositions.reduce((sum, p) => sum + (p.current_value ?? 0), 0);
+  const totalCostBasis = stockPositions.reduce((sum, p) => sum + (p.cost_basis ?? 0), 0);
+  const cashBalance = cashPosition?.current_value ?? summary?.cash_balance ?? 0;
   const grandTotal = totalEquity + cashBalance;
   const totalGainLoss = totalEquity - totalCostBasis;
   const totalGainLossPct = totalCostBasis > 0 ? (totalGainLoss / totalCostBasis) * 100 : 0;
-  const assignedCount = positions.filter((p) => p.category != null).length;
+  const assignedCount = stockPositions.filter((p) => p.category != null).length;
 
   // Category breakdown
   const categoryBreakdown = useMemo(() => {
     const groups: Record<string, number> = { CORE: 0, TITAN: 0, CONSENSUS: 0, Unassigned: 0 };
-    for (const p of positions) {
+    for (const p of stockPositions) {
       const key = p.category ?? "Unassigned";
       groups[key] = (groups[key] ?? 0) + (p.current_value ?? 0);
     }
     return Object.entries(groups).map(([name, value]) => ({
       name,
       value,
-      pct: grandTotal > 0 ? (value / grandTotal) * 100 : 0,
+      pct: totalEquity > 0 ? (value / totalEquity) * 100 : 0,
     }));
-  }, [positions, grandTotal]);
+  }, [stockPositions, totalEquity]);
 
   // Sorting
   const sortedPositions = useMemo(() => {
@@ -212,7 +214,7 @@ export default function Portfolio() {
             <Tag className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{assignedCount} <span className="text-base font-normal text-muted-foreground">of {positions.length}</span></div>
+            <div className="text-2xl font-bold">{assignedCount} <span className="text-base font-normal text-muted-foreground">of {stockPositions.length}</span></div>
           </CardContent>
         </Card>
       </div>
@@ -276,15 +278,16 @@ export default function Portfolio() {
                   const accounts = getAccountBreakdowns(p.account);
                   const isExpanded = expandedId === p.id;
                   const hasAccounts = accounts.length > 0;
-                  const gl = (p.current_value ?? 0) - (p.cost_basis ?? 0);
-                  const glPct = (p.cost_basis ?? 0) > 0 ? (gl / (p.cost_basis ?? 1)) * 100 : 0;
+                  const isCash = p.symbol === "CASH";
+                  const gl = isCash ? 0 : (p.current_value ?? 0) - (p.cost_basis ?? 0);
+                  const glPct = isCash ? 0 : (p.cost_basis ?? 0) > 0 ? (gl / (p.cost_basis ?? 1)) * 100 : 0;
                   const weight = grandTotal > 0 ? ((p.current_value ?? 0) / grandTotal) * 100 : 0;
-                  const glColor = gl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400";
+                  const glColor = isCash ? "text-muted-foreground" : gl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400";
 
                   return (
                     <Fragment key={p.id}>
                       <TableRow
-                        className={hasAccounts ? "cursor-pointer hover:bg-muted/50" : ""}
+                        className={`${hasAccounts ? "cursor-pointer hover:bg-muted/50" : ""} ${isCash ? "bg-muted/30 border-dashed" : ""}`}
                         onClick={() => hasAccounts && setExpandedId(isExpanded ? null : p.id)}
                       >
                         <TableCell className="w-8 px-2">
@@ -294,22 +297,35 @@ export default function Portfolio() {
                             />
                           )}
                         </TableCell>
-                        <TableCell className="font-medium">{p.symbol}</TableCell>
+                        <TableCell className="font-medium">
+                          <span className="inline-flex items-center gap-1.5">
+                            {isCash && <Banknote className="h-4 w-4 text-muted-foreground" />}
+                            {p.symbol}
+                          </span>
+                        </TableCell>
                         <TableCell className="text-muted-foreground">{p.company_name ?? "—"}</TableCell>
-                        <TableCell className="text-right">{fmtShares(p.shares)}</TableCell>
-                        <TableCell className="text-right">{fmt(p.current_price)}</TableCell>
+                        <TableCell className="text-right">{isCash ? fmt(p.shares) : fmtShares(p.shares)}</TableCell>
+                        <TableCell className="text-right">{isCash ? "—" : fmt(p.current_price)}</TableCell>
                         <TableCell className="text-right font-medium">{fmt(p.current_value)}</TableCell>
-                        <TableCell className="text-right">{fmt(p.cost_basis)}</TableCell>
-                        <TableCell className={`text-right font-medium ${glColor}`}>{gl >= 0 ? "+" : ""}{fmt(gl)}</TableCell>
-                        <TableCell className={`text-right ${glColor}`}>{gl >= 0 ? "+" : ""}{fmtPct(glPct)}</TableCell>
+                        <TableCell className="text-right">{isCash ? "—" : fmt(p.cost_basis)}</TableCell>
+                        <TableCell className={`text-right font-medium ${glColor}`}>
+                          {isCash ? "$0.00" : `${gl >= 0 ? "+" : ""}${fmt(gl)}`}
+                        </TableCell>
+                        <TableCell className={`text-right ${glColor}`}>
+                          {isCash ? "0.00%" : `${gl >= 0 ? "+" : ""}${fmtPct(glPct)}`}
+                        </TableCell>
                         <TableCell className="text-right text-muted-foreground">{fmtPct(weight)}</TableCell>
                         <TableCell>
-                          <CategorySelector
-                            positionId={p.id}
-                            category={p.category}
-                            tier={p.tier}
-                            onUpdate={(cat, tier) => handleCategoryUpdate(p.id, cat, tier)}
-                          />
+                          {isCash ? (
+                            <span className="text-xs text-muted-foreground/50 px-2">—</span>
+                          ) : (
+                            <CategorySelector
+                              positionId={p.id}
+                              category={p.category}
+                              tier={p.tier}
+                              onUpdate={(cat, tier) => handleCategoryUpdate(p.id, cat, tier)}
+                            />
+                          )}
                         </TableCell>
                       </TableRow>
                       {isExpanded && accounts.map((acct, i) => (
@@ -317,7 +333,7 @@ export default function Portfolio() {
                           <TableCell></TableCell>
                           <TableCell></TableCell>
                           <TableCell className="text-sm text-muted-foreground pl-4">↳ {acct.account}</TableCell>
-                          <TableCell className="text-right text-sm text-muted-foreground">{fmtShares(acct.shares)}</TableCell>
+                          <TableCell className="text-right text-sm text-muted-foreground">{isCash ? fmt(acct.shares) : fmtShares(acct.shares)}</TableCell>
                           <TableCell></TableCell>
                           <TableCell className="text-right text-sm text-muted-foreground">{fmt(acct.value)}</TableCell>
                           <TableCell colSpan={5}></TableCell>

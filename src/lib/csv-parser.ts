@@ -14,9 +14,16 @@ export interface ParsedPosition {
   accounts: AccountBreakdown[];
 }
 
+export interface CashBreakdown {
+  account: string;
+  shares: number;
+  value: number;
+}
+
 export interface ParseResult {
   positions: ParsedPosition[];
   cashBalance: number;
+  cashAccounts: CashBreakdown[];
   errors: string[];
   fileCount: number;
 }
@@ -35,7 +42,7 @@ function cleanString(value: string): string {
 }
 
 /** Parse a single Fidelity CSV and return raw (non-aggregated) positions + cash */
-function parseSingleCSV(csvText: string): { positions: ParsedPosition[]; cashBalance: number; errors: string[] } {
+function parseSingleCSV(csvText: string): { positions: ParsedPosition[]; cashBalance: number; cashAccounts: CashBreakdown[]; errors: string[] } {
   const errors: string[] = [];
   const lines = csvText.split(/\r?\n/);
 
@@ -54,7 +61,7 @@ function parseSingleCSV(csvText: string): { positions: ParsedPosition[]; cashBal
 
   if (headerIndex === -1) {
     errors.push("Could not find a valid header row.");
-    return { positions: [], cashBalance: 0, errors };
+    return { positions: [], cashBalance: 0, cashAccounts: [], errors };
   }
 
   const headers = parseCSVLine(lines[headerIndex]).map((h) => h.trim().toLowerCase());
@@ -71,11 +78,12 @@ function parseSingleCSV(csvText: string): { positions: ParsedPosition[]; cashBal
 
   if (colMap.symbol === -1) {
     errors.push("Could not find 'Symbol' column.");
-    return { positions: [], cashBalance: 0, errors };
+    return { positions: [], cashBalance: 0, cashAccounts: [], errors };
   }
 
   const positions: ParsedPosition[] = [];
   let cashBalance = 0;
+  const cashAccounts: CashBreakdown[] = [];
 
   for (let i = headerIndex + 1; i < lines.length; i++) {
     const line = lines[i].trim();
@@ -90,7 +98,12 @@ function parseSingleCSV(csvText: string): { positions: ParsedPosition[]; cashBal
     const shares = cleanNumber(cols[colMap.shares] ?? "");
 
     if (CASH_SYMBOLS.includes(symbol) || symbol.includes("**")) {
-      cashBalance += value || shares;
+      const cashAmt = value || shares;
+      cashBalance += cashAmt;
+      const accountName = cleanString(cols[colMap.account] ?? "");
+      if (accountName && cashAmt > 0) {
+        cashAccounts.push({ account: accountName, shares: cashAmt, value: cashAmt });
+      }
       continue;
     }
 
@@ -109,7 +122,7 @@ function parseSingleCSV(csvText: string): { positions: ParsedPosition[]; cashBal
     });
   }
 
-  return { positions, cashBalance, errors };
+  return { positions, cashBalance, cashAccounts, errors };
 }
 
 /** Merge new positions into an existing aggregated map */
@@ -144,6 +157,7 @@ function mergePositions(
 export function parseFidelityCSVs(csvTexts: string[]): ParseResult {
   const aggregated = new Map<string, ParsedPosition>();
   let cashBalance = 0;
+  const allCashAccounts: CashBreakdown[] = [];
   const allErrors: string[] = [];
 
   for (const text of csvTexts) {
@@ -151,13 +165,23 @@ export function parseFidelityCSVs(csvTexts: string[]): ParseResult {
     allErrors.push(...result.errors);
     cashBalance += result.cashBalance;
     mergePositions(aggregated, result.positions);
+    // Merge cash account breakdowns
+    for (const ca of result.cashAccounts) {
+      const existing = allCashAccounts.find((a) => a.account === ca.account);
+      if (existing) {
+        existing.shares += ca.shares;
+        existing.value += ca.value;
+      } else {
+        allCashAccounts.push({ ...ca });
+      }
+    }
   }
 
   const positions = Array.from(aggregated.values()).sort(
     (a, b) => b.currentValue - a.currentValue
   );
 
-  return { positions, cashBalance, errors: allErrors, fileCount: csvTexts.length };
+  return { positions, cashBalance, cashAccounts: allCashAccounts, errors: allErrors, fileCount: csvTexts.length };
 }
 
 /** Convenience: parse a single CSV (backwards-compatible) */
