@@ -97,6 +97,7 @@ export type Database = {
       }
       screen_runs: {
         Row: {
+          all_symbols: string[]
           auto_tag_code: string | null
           auto_tag_id: string | null
           created_at: string
@@ -110,6 +111,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          all_symbols?: string[]
           auto_tag_code?: string | null
           auto_tag_id?: string | null
           created_at?: string
@@ -123,6 +125,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          all_symbols?: string[]
           auto_tag_code?: string | null
           auto_tag_id?: string | null
           created_at?: string
