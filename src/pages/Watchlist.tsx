@@ -609,23 +609,6 @@ export default function Watchlist() {
         </Card>
       )}
 
-      {/* Delete confirmation */}
-      <AlertDialog open={!!deleteConfirm} onOpenChange={(o) => !o && setDeleteConfirm(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remove {deleteConfirm?.symbol} from watchlist?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will remove the entry and all its tag associations. Any future alerts for this symbol will also be removed. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteConfirm} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              Remove
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       {/* Screen History */}
       {runs.length > 0 && (
@@ -681,6 +664,118 @@ export default function Watchlist() {
           </Card>
         </div>
       )}
+
+      {/* Cross-Screen Overlap Matrix */}
+      <ScreenOverlapMatrix runs={runs} screens={screens} />
+
+      {/* Delete confirmation */}
+      <AlertDialog open={!!deleteConfirm} onOpenChange={(o) => !o && setDeleteConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {deleteConfirm?.symbol} from watchlist?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove the entry and all its tag associations. Any future alerts for this symbol will also be removed. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteConfirm} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+/* ── Cross-Screen Overlap Matrix ── */
+function ScreenOverlapMatrix({
+  runs,
+  screens,
+}: {
+  runs: ReturnType<typeof import("@/hooks/use-screens").useScreens>["runs"];
+  screens: ReturnType<typeof import("@/hooks/use-screens").useScreens>["screens"];
+}) {
+  // Get the latest run per screen
+  const latestByScreen = useMemo(() => {
+    const map = new Map<string, typeof runs[number]>();
+    for (const run of runs) {
+      const existing = map.get(run.screen_id);
+      if (!existing || new Date(run.created_at) > new Date(existing.created_at)) {
+        map.set(run.screen_id, run);
+      }
+    }
+    return Array.from(map.values()).sort((a, b) =>
+      (a.screen?.name ?? "").localeCompare(b.screen?.name ?? "")
+    );
+  }, [runs]);
+
+  if (latestByScreen.length < 2) return null;
+
+  // Build overlap counts
+  const overlap = (a: typeof runs[number], b: typeof runs[number]) => {
+    const setA = new Set(a.matched_symbols ?? []);
+    return (b.matched_symbols ?? []).filter((s) => setA.has(s)).length;
+  };
+
+  return (
+    <div className="space-y-3">
+      <h2 className="text-lg font-semibold">Cross-Screen Overlap</h2>
+      <p className="text-sm text-muted-foreground">
+        Pairwise symbol overlap between the latest run of each screen.
+      </p>
+      <Card>
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="min-w-[120px]" />
+                {latestByScreen.map((r) => (
+                  <TableHead key={r.id} className="text-center text-xs whitespace-nowrap">
+                    {r.screen?.name ?? r.screen_id.slice(0, 6)}
+                    <div className="text-[10px] text-muted-foreground font-normal">
+                      {new Date(r.run_date).toLocaleDateString()}
+                    </div>
+                  </TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {latestByScreen.map((row, ri) => (
+                <TableRow key={row.id}>
+                  <TableCell className="font-medium text-sm whitespace-nowrap">
+                    {row.screen?.name ?? row.screen_id.slice(0, 6)}
+                    <span className="ml-1 text-muted-foreground text-xs">({(row.matched_symbols ?? []).length})</span>
+                  </TableCell>
+                  {latestByScreen.map((col, ci) => {
+                    const count = ri === ci ? (row.matched_symbols ?? []).length : overlap(row, col);
+                    const isDiag = ri === ci;
+                    const maxPossible = Math.min(
+                      (row.matched_symbols ?? []).length,
+                      (col.matched_symbols ?? []).length
+                    );
+                    const intensity = !isDiag && maxPossible > 0 ? count / maxPossible : 0;
+                    return (
+                      <TableCell
+                        key={col.id}
+                        className={`text-center text-sm tabular-nums ${isDiag ? "bg-muted font-medium" : ""}`}
+                        style={
+                          !isDiag && intensity > 0
+                            ? { backgroundColor: `hsl(var(--primary) / ${(intensity * 0.3 + 0.05).toFixed(2)})` }
+                            : undefined
+                        }
+                      >
+                        {count}
+                      </TableCell>
+                    );
+                  })}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </Card>
     </div>
   );
 }
