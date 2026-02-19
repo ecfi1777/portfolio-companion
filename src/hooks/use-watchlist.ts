@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "@/hooks/use-toast";
+import { getMarketCapCategory } from "@/lib/market-cap";
 
 export interface WatchlistEntry {
   id: string;
@@ -88,14 +89,13 @@ export function useWatchlist() {
     setLoading(true);
 
     const [entriesRes, tagsRes, etRes] = await Promise.all([
-      supabase.from("watchlist_entries").select("*").order("symbol"),
+      supabase.from("watchlist_entries").select("*").order("date_added", { ascending: false }),
       supabase.from("tags").select("*").order("short_code"),
       supabase.from("watchlist_entry_tags").select("*"),
     ]);
 
     const fetchedTags = (tagsRes.data ?? []) as Tag[];
 
-    // Seed defaults if no tags exist
     if (fetchedTags.length === 0 && !seeding) {
       await seedDefaultTags();
       const { data: seededTags } = await supabase.from("tags").select("*").order("short_code");
@@ -113,18 +113,19 @@ export function useWatchlist() {
     fetchAll();
   }, [fetchAll]);
 
-  // Enrich entries with their tags
+  // Enrich entries with their tags and auto-calculate market_cap_category
   const enrichedEntries = entries.map((entry) => {
     const tagIds = entryTags
       .filter((et) => et.watchlist_entry_id === entry.id)
       .map((et) => et.tag_id);
+    const autoCategory = getMarketCapCategory(entry.market_cap);
     return {
       ...entry,
+      market_cap_category: autoCategory ?? entry.market_cap_category,
       tags: tags.filter((t) => tagIds.includes(t.id)),
     };
   });
 
-  // Get entry count per tag
   const tagsWithCounts = tags.map((tag) => ({
     ...tag,
     entry_count: entryTags.filter((et) => et.tag_id === tag.id).length,
@@ -175,7 +176,25 @@ export function useWatchlist() {
 
   const deleteEntry = async (id: string) => {
     await supabase.from("watchlist_entries").delete().eq("id", id);
+    toast({ title: "Removed", description: "Entry removed from watchlist." });
     await fetchAll();
+  };
+
+  const updateEntryNotes = async (id: string, notes: string) => {
+    await supabase.from("watchlist_entries").update({ notes: notes || null }).eq("id", id);
+    setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, notes: notes || null } : e)));
+  };
+
+  const addEntryTag = async (entryId: string, tagId: string) => {
+    const { error } = await supabase.from("watchlist_entry_tags").insert({ watchlist_entry_id: entryId, tag_id: tagId });
+    if (!error) {
+      setEntryTags((prev) => [...prev, { watchlist_entry_id: entryId, tag_id: tagId }]);
+    }
+  };
+
+  const removeEntryTag = async (entryId: string, tagId: string) => {
+    await supabase.from("watchlist_entry_tags").delete().eq("watchlist_entry_id", entryId).eq("tag_id", tagId);
+    setEntryTags((prev) => prev.filter((et) => !(et.watchlist_entry_id === entryId && et.tag_id === tagId)));
   };
 
   const createTag = async (data: { short_code: string; full_name: string; color: string }) => {
@@ -209,6 +228,9 @@ export function useWatchlist() {
     loading,
     addEntry,
     deleteEntry,
+    updateEntryNotes,
+    addEntryTag,
+    removeEntryTag,
     createTag,
     updateTag,
     deleteTag,
