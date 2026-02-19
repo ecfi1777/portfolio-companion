@@ -19,6 +19,7 @@ export interface ScreenRun {
   total_symbols: number;
   match_count: number;
   matched_symbols: string[];
+  all_symbols: string[];
   auto_tag_id: string | null;
   auto_tag_code: string | null;
   created_at: string;
@@ -73,6 +74,7 @@ export function useScreens() {
     total_symbols: number;
     match_count: number;
     matched_symbols: string[];
+    all_symbols: string[];
     auto_tag_id: string | null;
     auto_tag_code: string;
   }): Promise<ScreenRun | null> => {

@@ -671,6 +671,7 @@ export default function Watchlist() {
                       .map((run) => {
                         const isRunExpanded = expandedRunId === run.id;
                         const matchedSymbols = run.matched_symbols ?? [];
+                        const matchedSet = new Set(matchedSymbols.map((s) => s.toUpperCase()));
                         const watchlistSymbols = new Set(entries.map((e) => e.symbol.toUpperCase()));
                         return (
                           <React.Fragment key={run.id}>
@@ -695,46 +696,45 @@ export default function Watchlist() {
                               <TableRow>
                                 <TableCell colSpan={6} className="bg-muted/30 p-4">
                                   <div className="space-y-3">
-                                    <div>
-                                      <h4 className="text-sm font-medium mb-2">
-                                        Matched Symbols ({matchedSymbols.length})
-                                      </h4>
-                                      <div className="flex flex-wrap gap-1.5">
-                                        {matchedSymbols.map((sym) => {
-                                          const inWatchlist = watchlistSymbols.has(sym.toUpperCase());
-                                          return (
-                                            <div key={sym} className="flex items-center gap-1">
-                                              <Badge
-                                                variant={inWatchlist ? "default" : "outline"}
-                                                className="text-xs"
+                                    <h4 className="text-sm font-medium mb-2">
+                                      All Symbols ({(run.all_symbols ?? matchedSymbols).length})
+                                      <span className="ml-2 text-muted-foreground font-normal text-xs">
+                                        — {matchedSymbols.length} in watchlist
+                                      </span>
+                                    </h4>
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {((run.all_symbols ?? []).length > 0 ? run.all_symbols! : matchedSymbols).map((sym) => {
+                                        const inWatchlist = watchlistSymbols.has(sym.toUpperCase());
+                                        const isMatch = matchedSet.has(sym.toUpperCase());
+                                        return (
+                                          <div key={sym} className="flex items-center gap-1">
+                                            <Badge
+                                              variant={isMatch ? "default" : "outline"}
+                                              className={`text-xs ${isMatch ? "" : "opacity-60"}`}
+                                            >
+                                              {sym}
+                                            </Badge>
+                                            {!inWatchlist && (
+                                              <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-5 w-5 p-0"
+                                                disabled={addingSymbol === sym}
+                                                onClick={async (e) => {
+                                                  e.stopPropagation();
+                                                  setAddingSymbol(sym);
+                                                  await addEntry({ symbol: sym });
+                                                  await refetchWatchlist();
+                                                  setAddingSymbol(null);
+                                                }}
+                                                title={`Add ${sym} to watchlist`}
                                               >
-                                                {sym}
-                                              </Badge>
-                                              {!inWatchlist && (
-                                                <Button
-                                                  variant="ghost"
-                                                  size="sm"
-                                                  className="h-5 w-5 p-0"
-                                                  disabled={addingSymbol === sym}
-                                                  onClick={async (e) => {
-                                                    e.stopPropagation();
-                                                    setAddingSymbol(sym);
-                                                    await addEntry({ symbol: sym });
-                                                    await refetchWatchlist();
-                                                    setAddingSymbol(null);
-                                                  }}
-                                                  title={`Add ${sym} to watchlist`}
-                                                >
-                                                  <Plus className="h-3 w-3" />
-                                                </Button>
-                                              )}
-                                            </div>
-                                          );
-                                        })}
-                                        {matchedSymbols.length === 0 && (
-                                          <p className="text-xs text-muted-foreground">No matched symbols recorded</p>
-                                        )}
-                                      </div>
+                                                <Plus className="h-3 w-3" />
+                                              </Button>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
                                     </div>
                                   </div>
                                 </TableCell>

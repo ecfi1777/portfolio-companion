@@ -183,6 +183,7 @@ export function ScreenUploadModal({
       total_symbols: uniqueSymbols.length,
       match_count: matched.length,
       matched_symbols: matched,
+      all_symbols: uniqueSymbols,
       auto_tag_id: tagId,
       auto_tag_code: tagCode,
     });

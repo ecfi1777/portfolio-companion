@@ -1,0 +1,1 @@
+ALTER TABLE public.screen_runs ADD COLUMN all_symbols text[] NOT NULL DEFAULT '{}'::text[];
