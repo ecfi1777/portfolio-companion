@@ -95,6 +95,87 @@ export type Database = {
         }
         Relationships: []
       }
+      screen_runs: {
+        Row: {
+          auto_tag_code: string | null
+          auto_tag_id: string | null
+          created_at: string
+          id: string
+          match_count: number
+          matched_symbols: string[] | null
+          run_date: string
+          run_number: number
+          screen_id: string
+          total_symbols: number
+          user_id: string
+        }
+        Insert: {
+          auto_tag_code?: string | null
+          auto_tag_id?: string | null
+          created_at?: string
+          id?: string
+          match_count?: number
+          matched_symbols?: string[] | null
+          run_date?: string
+          run_number?: number
+          screen_id: string
+          total_symbols?: number
+          user_id: string
+        }
+        Update: {
+          auto_tag_code?: string | null
+          auto_tag_id?: string | null
+          created_at?: string
+          id?: string
+          match_count?: number
+          matched_symbols?: string[] | null
+          run_date?: string
+          run_number?: number
+          screen_id?: string
+          total_symbols?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "screen_runs_auto_tag_id_fkey"
+            columns: ["auto_tag_id"]
+            isOneToOne: false
+            referencedRelation: "tags"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "screen_runs_screen_id_fkey"
+            columns: ["screen_id"]
+            isOneToOne: false
+            referencedRelation: "screens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      screens: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          short_code: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          short_code: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          short_code?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       tags: {
         Row: {
           color: string | null

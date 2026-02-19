@@ -18,11 +18,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Eye, Plus, Settings, Search, Bell, ChevronDown, ChevronUp, ArrowUpDown, Trash2, X, Tag as TagIcon,
+  Eye, Plus, Settings, Search, Bell, ChevronDown, ChevronUp, ArrowUpDown, Trash2, X, Tag as TagIcon, Upload, FileSearch,
 } from "lucide-react";
 import { useWatchlist, type WatchlistEntry } from "@/hooks/use-watchlist";
+import { useScreens } from "@/hooks/use-screens";
 import { AddToWatchlistModal } from "@/components/AddToWatchlistModal";
 import { ManageTagsModal } from "@/components/ManageTagsModal";
+import { ScreenUploadModal } from "@/components/ScreenUploadModal";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatMarketCap } from "@/lib/market-cap";
 
 /* ── Formatters ── */
@@ -148,14 +151,17 @@ function SortHeader({
 export default function Watchlist() {
   const {
     entries, tags, loading, addEntry, deleteEntry, updateEntryNotes,
-    addEntryTag, removeEntryTag, createTag, updateTag, deleteTag,
+    addEntryTag, removeEntryTag, createTag, updateTag, deleteTag, refetch: refetchWatchlist,
   } = useWatchlist();
+  const { screens, runs, createScreen, createRun } = useScreens();
 
   const [addOpen, setAddOpen] = useState(false);
   const [tagsOpen, setTagsOpen] = useState(false);
+  const [screenOpen, setScreenOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<WatchlistEntry | null>(null);
+  const [historyFilter, setHistoryFilter] = useState<string>("all");
 
   // Filters
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
@@ -311,6 +317,10 @@ export default function Watchlist() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Watchlist</h1>
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setScreenOpen(true)}>
+            <Upload className="mr-1 h-4 w-4" />
+            Upload Screen
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setTagsOpen(true)}>
             <Settings className="mr-1 h-4 w-4" />
             Manage Tags
@@ -324,6 +334,17 @@ export default function Watchlist() {
 
       <AddToWatchlistModal open={addOpen} onOpenChange={setAddOpen} tags={tags} onSave={addEntry} />
       <ManageTagsModal open={tagsOpen} onOpenChange={setTagsOpen} tags={tags} onCreate={createTag} onUpdate={updateTag} onDelete={deleteTag} />
+      <ScreenUploadModal
+        open={screenOpen}
+        onOpenChange={setScreenOpen}
+        screens={screens}
+        entries={entries}
+        tags={tags}
+        createScreen={createScreen}
+        createRun={createRun}
+        addEntry={addEntry}
+        refetchWatchlist={refetchWatchlist}
+      />
 
       {/* Search + Filters */}
       <div className="flex flex-wrap items-center gap-2">
@@ -605,6 +626,61 @@ export default function Watchlist() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Screen History */}
+      {runs.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <FileSearch className="h-5 w-5" />
+              Screen History
+            </h2>
+            <Select value={historyFilter} onValueChange={setHistoryFilter}>
+              <SelectTrigger className="w-40 h-8">
+                <SelectValue placeholder="All screens" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Screens</SelectItem>
+                {screens.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Card>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Screen</TableHead>
+                    <TableHead className="text-right">Total Symbols</TableHead>
+                    <TableHead className="text-right">Matches</TableHead>
+                    <TableHead>Auto Tag</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {runs
+                    .filter((r) => historyFilter === "all" || r.screen_id === historyFilter)
+                    .map((run) => (
+                      <TableRow key={run.id}>
+                        <TableCell className="text-sm">{new Date(run.run_date).toLocaleDateString()}</TableCell>
+                        <TableCell className="text-sm font-medium">{run.screen?.name ?? "—"}</TableCell>
+                        <TableCell className="text-right text-sm">{run.total_symbols}</TableCell>
+                        <TableCell className="text-right text-sm">{run.match_count}</TableCell>
+                        <TableCell>
+                          {run.auto_tag_code && (
+                            <Badge variant="secondary" className="text-xs">{run.auto_tag_code}</Badge>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                </TableBody>
+              </Table>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
