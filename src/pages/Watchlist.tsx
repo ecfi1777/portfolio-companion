@@ -153,7 +153,7 @@ export default function Watchlist() {
     entries, tags, loading, addEntry, deleteEntry, updateEntryNotes,
     addEntryTag, removeEntryTag, createTag, updateTag, deleteTag, refetch: refetchWatchlist,
   } = useWatchlist();
-  const { screens, runs, createScreen, createRun } = useScreens();
+  const { screens, runs, createScreen, createRun, deleteScreen } = useScreens();
 
   const [addOpen, setAddOpen] = useState(false);
   const [tagsOpen, setTagsOpen] = useState(false);
@@ -162,6 +162,9 @@ export default function Watchlist() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<WatchlistEntry | null>(null);
   const [historyFilter, setHistoryFilter] = useState<string>("all");
+  const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
+  const [deleteScreenConfirm, setDeleteScreenConfirm] = useState<{ id: string; name: string } | null>(null);
+  const [addingSymbol, setAddingSymbol] = useState<string | null>(null);
 
   // Filters
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
@@ -611,7 +614,7 @@ export default function Watchlist() {
 
 
       {/* Screen History */}
-      {runs.length > 0 && (
+      {(runs.length > 0 || screens.length > 0) && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -630,45 +633,128 @@ export default function Watchlist() {
               </SelectContent>
             </Select>
           </div>
-          <Card>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Screen</TableHead>
-                    <TableHead className="text-right">Total Symbols</TableHead>
-                    <TableHead className="text-right">Matches</TableHead>
-                    <TableHead>Auto Tag</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {runs
-                    .filter((r) => historyFilter === "all" || r.screen_id === historyFilter)
-                    .map((run) => (
-                      <TableRow key={run.id}>
-                        <TableCell className="text-sm">{new Date(run.run_date).toLocaleDateString()}</TableCell>
-                        <TableCell className="text-sm font-medium">{run.screen?.name ?? "—"}</TableCell>
-                        <TableCell className="text-right text-sm">{run.total_symbols}</TableCell>
-                        <TableCell className="text-right text-sm">{run.match_count}</TableCell>
-                        <TableCell>
-                          {run.auto_tag_code && (
-                            <Badge variant="secondary" className="text-xs">{run.auto_tag_code}</Badge>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                </TableBody>
-              </Table>
-            </div>
-          </Card>
+
+          {/* Screens list with delete */}
+          <div className="flex flex-wrap gap-2">
+            {screens.map((s) => (
+              <div key={s.id} className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-sm">
+                <span className="font-medium">{s.name}</span>
+                <span className="text-muted-foreground text-xs">({s.short_code})</span>
+                <button
+                  className="ml-1 text-muted-foreground hover:text-destructive transition-colors"
+                  onClick={() => setDeleteScreenConfirm({ id: s.id, name: s.name })}
+                  title={`Delete ${s.name}`}
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {runs.length > 0 && (
+            <Card>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-8" />
+                      <TableHead>Date</TableHead>
+                      <TableHead>Screen</TableHead>
+                      <TableHead className="text-right">Total Symbols</TableHead>
+                      <TableHead className="text-right">Matches</TableHead>
+                      <TableHead>Auto Tag</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {runs
+                      .filter((r) => historyFilter === "all" || r.screen_id === historyFilter)
+                      .map((run) => {
+                        const isRunExpanded = expandedRunId === run.id;
+                        const matchedSymbols = run.matched_symbols ?? [];
+                        const watchlistSymbols = new Set(entries.map((e) => e.symbol.toUpperCase()));
+                        return (
+                          <React.Fragment key={run.id}>
+                            <TableRow
+                              className="cursor-pointer"
+                              onClick={() => setExpandedRunId(isRunExpanded ? null : run.id)}
+                            >
+                              <TableCell className="w-8">
+                                {isRunExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                              </TableCell>
+                              <TableCell className="text-sm">{new Date(run.run_date).toLocaleDateString()}</TableCell>
+                              <TableCell className="text-sm font-medium">{run.screen?.name ?? "—"}</TableCell>
+                              <TableCell className="text-right text-sm">{run.total_symbols}</TableCell>
+                              <TableCell className="text-right text-sm">{run.match_count}</TableCell>
+                              <TableCell>
+                                {run.auto_tag_code && (
+                                  <Badge variant="secondary" className="text-xs">{run.auto_tag_code}</Badge>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                            {isRunExpanded && (
+                              <TableRow>
+                                <TableCell colSpan={6} className="bg-muted/30 p-4">
+                                  <div className="space-y-3">
+                                    <div>
+                                      <h4 className="text-sm font-medium mb-2">
+                                        Matched Symbols ({matchedSymbols.length})
+                                      </h4>
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {matchedSymbols.map((sym) => {
+                                          const inWatchlist = watchlistSymbols.has(sym.toUpperCase());
+                                          return (
+                                            <div key={sym} className="flex items-center gap-1">
+                                              <Badge
+                                                variant={inWatchlist ? "default" : "outline"}
+                                                className="text-xs"
+                                              >
+                                                {sym}
+                                              </Badge>
+                                              {!inWatchlist && (
+                                                <Button
+                                                  variant="ghost"
+                                                  size="sm"
+                                                  className="h-5 w-5 p-0"
+                                                  disabled={addingSymbol === sym}
+                                                  onClick={async (e) => {
+                                                    e.stopPropagation();
+                                                    setAddingSymbol(sym);
+                                                    await addEntry({ symbol: sym });
+                                                    await refetchWatchlist();
+                                                    setAddingSymbol(null);
+                                                  }}
+                                                  title={`Add ${sym} to watchlist`}
+                                                >
+                                                  <Plus className="h-3 w-3" />
+                                                </Button>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
+                                        {matchedSymbols.length === 0 && (
+                                          <p className="text-xs text-muted-foreground">No matched symbols recorded</p>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                  </TableBody>
+                </Table>
+              </div>
+            </Card>
+          )}
         </div>
       )}
 
       {/* Cross-Screen Overlap Matrix */}
       <ScreenOverlapMatrix runs={runs} screens={screens} />
 
-      {/* Delete confirmation */}
+      {/* Delete watchlist entry confirmation */}
       <AlertDialog open={!!deleteConfirm} onOpenChange={(o) => !o && setDeleteConfirm(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -681,6 +767,34 @@ export default function Watchlist() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleDeleteConfirm} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
               Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete screen confirmation */}
+      <AlertDialog open={!!deleteScreenConfirm} onOpenChange={(o) => !o && setDeleteScreenConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete screen "{deleteScreenConfirm?.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the screen, all its runs, and remove any auto-generated tags from your watchlist entries. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (deleteScreenConfirm) {
+                  await deleteScreen(deleteScreenConfirm.id);
+                  if (historyFilter === deleteScreenConfirm.id) setHistoryFilter("all");
+                  setDeleteScreenConfirm(null);
+                  await refetchWatchlist();
+                }
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

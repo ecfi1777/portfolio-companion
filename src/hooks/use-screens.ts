@@ -88,5 +88,30 @@ export function useScreens() {
     return newRun;
   };
 
-  return { screens, runs: enrichedRuns, loading, createScreen, createRun, refetch: fetchAll };
+  const deleteScreen = async (screenId: string): Promise<boolean> => {
+    if (!user) return false;
+    // Get runs for this screen to find auto_tag_ids to clean up
+    const screenRuns = runs.filter((r) => r.screen_id === screenId);
+    const tagIds = screenRuns.map((r) => r.auto_tag_id).filter(Boolean) as string[];
+
+    // Delete runs first (FK constraint)
+    await supabase.from("screen_runs").delete().eq("screen_id", screenId);
+
+    // Delete the screen
+    const { error } = await supabase.from("screens").delete().eq("id", screenId);
+    if (error) return false;
+
+    // Clean up auto-generated tags and their assignments
+    if (tagIds.length > 0) {
+      await supabase.from("watchlist_entry_tags").delete().in("tag_id", tagIds);
+      await supabase.from("tags").delete().in("id", tagIds);
+    }
+
+    // Update local state
+    setScreens((prev) => prev.filter((s) => s.id !== screenId));
+    setRuns((prev) => prev.filter((r) => r.screen_id !== screenId));
+    return true;
+  };
+
+  return { screens, runs: enrichedRuns, loading, createScreen, createRun, deleteScreen, refetch: fetchAll };
 }
