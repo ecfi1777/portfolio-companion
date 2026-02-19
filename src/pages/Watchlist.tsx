@@ -827,10 +827,15 @@ function ScreenOverlapMatrix({
 
   if (latestByScreen.length < 2) return null;
 
-  // Build overlap counts
+  // Build overlap counts — use all_symbols (full CSV) with fallback to matched_symbols for older runs
+  const getSymbols = (r: typeof runs[number]) => {
+    const all = r.all_symbols ?? [];
+    return all.length > 0 ? all : (r.matched_symbols ?? []);
+  };
+
   const overlap = (a: typeof runs[number], b: typeof runs[number]) => {
-    const setA = new Set(a.matched_symbols ?? []);
-    return (b.matched_symbols ?? []).filter((s) => setA.has(s)).length;
+    const setA = new Set(getSymbols(a).map((s) => s.toUpperCase()));
+    return getSymbols(b).filter((s) => setA.has(s.toUpperCase())).length;
   };
 
   return (
@@ -860,14 +865,14 @@ function ScreenOverlapMatrix({
                 <TableRow key={row.id}>
                   <TableCell className="font-medium text-sm whitespace-nowrap">
                     {row.screen?.name ?? row.screen_id.slice(0, 6)}
-                    <span className="ml-1 text-muted-foreground text-xs">({(row.matched_symbols ?? []).length})</span>
+                    <span className="ml-1 text-muted-foreground text-xs">({getSymbols(row).length})</span>
                   </TableCell>
                   {latestByScreen.map((col, ci) => {
-                    const count = ri === ci ? (row.matched_symbols ?? []).length : overlap(row, col);
+                    const count = ri === ci ? getSymbols(row).length : overlap(row, col);
                     const isDiag = ri === ci;
                     const maxPossible = Math.min(
-                      (row.matched_symbols ?? []).length,
-                      (col.matched_symbols ?? []).length
+                      getSymbols(row).length,
+                      getSymbols(col).length
                     );
                     const intensity = !isDiag && maxPossible > 0 ? count / maxPossible : 0;
                     return (
