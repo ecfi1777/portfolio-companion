@@ -752,7 +752,7 @@ export default function Watchlist() {
       )}
 
       {/* Cross-Screen Overlap Matrix */}
-      <ScreenOverlapMatrix runs={runs} screens={screens} />
+      <ScreenOverlapMatrix runs={runs} screens={screens} entries={entries} addEntry={addEntry} refetchWatchlist={refetchWatchlist} />
 
       {/* Delete watchlist entry confirmation */}
       <AlertDialog open={!!deleteConfirm} onOpenChange={(o) => !o && setDeleteConfirm(null)}>
@@ -807,10 +807,21 @@ export default function Watchlist() {
 function ScreenOverlapMatrix({
   runs,
   screens,
+  entries,
+  addEntry,
+  refetchWatchlist,
 }: {
   runs: ReturnType<typeof import("@/hooks/use-screens").useScreens>["runs"];
   screens: ReturnType<typeof import("@/hooks/use-screens").useScreens>["screens"];
+  entries: WatchlistEntry[];
+  addEntry: (data: { symbol: string; company_name?: string }) => Promise<void>;
+  refetchWatchlist: () => Promise<void>;
 }) {
+  const [selectedPair, setSelectedPair] = useState<[number, number] | null>(null);
+  const [addingSymbol, setAddingSymbol] = useState<string | null>(null);
+
+  const watchlistSymbolSet = useMemo(() => new Set(entries.map((e) => e.symbol.toUpperCase())), [entries]);
+
   // Get the latest run per screen
   const latestByScreen = useMemo(() => {
     const map = new Map<string, typeof runs[number]>();
@@ -825,34 +836,99 @@ function ScreenOverlapMatrix({
     );
   }, [runs]);
 
-  if (latestByScreen.length < 2) return null;
-
-  // Build overlap counts — use all_symbols (full CSV) with fallback to matched_symbols for older runs
   const getSymbols = (r: typeof runs[number]) => {
     const all = r.all_symbols ?? [];
     return all.length > 0 ? all : (r.matched_symbols ?? []);
   };
 
-  const overlap = (a: typeof runs[number], b: typeof runs[number]) => {
+  const overlapSymbols = (a: typeof runs[number], b: typeof runs[number]) => {
     const setA = new Set(getSymbols(a).map((s) => s.toUpperCase()));
-    return getSymbols(b).filter((s) => setA.has(s.toUpperCase())).length;
+    return getSymbols(b).filter((s) => setA.has(s.toUpperCase())).map((s) => s.toUpperCase());
   };
 
+  const overlap = (a: typeof runs[number], b: typeof runs[number]) => overlapSymbols(a, b).length;
+
+  // Selected pair symbols
+  const pairSymbols = useMemo(() => {
+    if (!selectedPair) return [];
+    const [i, j] = selectedPair;
+    return [...new Set(overlapSymbols(latestByScreen[i], latestByScreen[j]))].sort();
+  }, [selectedPair, latestByScreen]);
+
+  // Cross-screen symbols: symbols in 2+ screens
+  const crossScreenData = useMemo(() => {
+    const symbolScreens = new Map<string, Set<number>>();
+    latestByScreen.forEach((run, idx) => {
+      for (const sym of getSymbols(run)) {
+        const upper = sym.toUpperCase();
+        if (!symbolScreens.has(upper)) symbolScreens.set(upper, new Set());
+        symbolScreens.get(upper)!.add(idx);
+      }
+    });
+    const results: { symbol: string; screenIndices: number[] }[] = [];
+    for (const [symbol, indices] of symbolScreens) {
+      if (indices.size >= 2) {
+        results.push({ symbol, screenIndices: Array.from(indices).sort() });
+      }
+    }
+    results.sort((a, b) => b.screenIndices.length - a.screenIndices.length || a.symbol.localeCompare(b.symbol));
+    return results;
+  }, [latestByScreen]);
+
+  const totalUniqueSymbols = useMemo(() => {
+    const all = new Set<string>();
+    latestByScreen.forEach((run) => getSymbols(run).forEach((s) => all.add(s.toUpperCase())));
+    return all.size;
+  }, [latestByScreen]);
+
+  // Watchlist matches: watchlist symbols that appear in any screen
+  const watchlistMatches = useMemo(() => {
+    const symbolScreens = new Map<string, number[]>();
+    latestByScreen.forEach((run, idx) => {
+      for (const sym of getSymbols(run)) {
+        const upper = sym.toUpperCase();
+        if (watchlistSymbolSet.has(upper)) {
+          if (!symbolScreens.has(upper)) symbolScreens.set(upper, []);
+          if (!symbolScreens.get(upper)!.includes(idx)) symbolScreens.get(upper)!.push(idx);
+        }
+      }
+    });
+    return Array.from(symbolScreens.entries())
+      .map(([symbol, indices]) => ({ symbol, screenIndices: indices.sort() }))
+      .sort((a, b) => b.screenIndices.length - a.screenIndices.length || a.symbol.localeCompare(b.symbol));
+  }, [latestByScreen, watchlistSymbolSet]);
+
+  const handleQuickAdd = async (symbol: string) => {
+    setAddingSymbol(symbol);
+    await addEntry({ symbol });
+    await refetchWatchlist();
+    setAddingSymbol(null);
+  };
+
+  if (latestByScreen.length < 2) return null;
+
+  const SCREEN_COLORS = ["#5865F2", "#57F287", "#FEE75C", "#ED4245", "#EB459E", "#9B59B6", "#3498DB", "#E67E22"];
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <h2 className="text-lg font-semibold">Cross-Screen Overlap</h2>
       <p className="text-sm text-muted-foreground">
-        Pairwise symbol overlap between the latest run of each screen.
+        Pairwise symbol overlap between the latest run of each screen. Click a cell to see the overlapping symbols.
       </p>
+
+      {/* Matrix */}
       <Card>
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead className="min-w-[120px]" />
-                {latestByScreen.map((r) => (
+                {latestByScreen.map((r, idx) => (
                   <TableHead key={r.id} className="text-center text-xs whitespace-nowrap">
-                    {r.screen?.name ?? r.screen_id.slice(0, 6)}
+                    <div className="flex items-center justify-center gap-1">
+                      <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: SCREEN_COLORS[idx % SCREEN_COLORS.length] }} />
+                      {r.screen?.name ?? r.screen_id.slice(0, 6)}
+                    </div>
                     <div className="text-[10px] text-muted-foreground font-normal">
                       {new Date(r.run_date).toLocaleDateString()}
                     </div>
@@ -864,26 +940,35 @@ function ScreenOverlapMatrix({
               {latestByScreen.map((row, ri) => (
                 <TableRow key={row.id}>
                   <TableCell className="font-medium text-sm whitespace-nowrap">
-                    {row.screen?.name ?? row.screen_id.slice(0, 6)}
-                    <span className="ml-1 text-muted-foreground text-xs">({getSymbols(row).length})</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: SCREEN_COLORS[ri % SCREEN_COLORS.length] }} />
+                      {row.screen?.name ?? row.screen_id.slice(0, 6)}
+                      <span className="text-muted-foreground text-xs">({getSymbols(row).length})</span>
+                    </div>
                   </TableCell>
                   {latestByScreen.map((col, ci) => {
                     const count = ri === ci ? getSymbols(row).length : overlap(row, col);
                     const isDiag = ri === ci;
-                    const maxPossible = Math.min(
-                      getSymbols(row).length,
-                      getSymbols(col).length
-                    );
+                    const isSelected = selectedPair && ((selectedPair[0] === ri && selectedPair[1] === ci) || (selectedPair[0] === ci && selectedPair[1] === ri));
+                    const maxPossible = Math.min(getSymbols(row).length, getSymbols(col).length);
                     const intensity = !isDiag && maxPossible > 0 ? count / maxPossible : 0;
                     return (
                       <TableCell
                         key={col.id}
-                        className={`text-center text-sm tabular-nums ${isDiag ? "bg-muted font-medium" : ""}`}
+                        className={`text-center text-sm tabular-nums ${isDiag ? "bg-muted font-medium" : "cursor-pointer hover:ring-2 hover:ring-primary/50"} ${isSelected ? "ring-2 ring-primary" : ""}`}
                         style={
                           !isDiag && intensity > 0
                             ? { backgroundColor: `hsl(var(--primary) / ${(intensity * 0.3 + 0.05).toFixed(2)})` }
                             : undefined
                         }
+                        onClick={() => {
+                          if (!isDiag) {
+                            const pair: [number, number] = ri < ci ? [ri, ci] : [ci, ri];
+                            setSelectedPair((prev) =>
+                              prev && prev[0] === pair[0] && prev[1] === pair[1] ? null : pair
+                            );
+                          }
+                        }}
                       >
                         {count}
                       </TableCell>
@@ -894,7 +979,158 @@ function ScreenOverlapMatrix({
             </TableBody>
           </Table>
         </div>
+
+        {/* Expanded pair overlap */}
+        {selectedPair && pairSymbols.length > 0 && (
+          <div className="border-t p-4 space-y-2">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <span>Overlap between</span>
+              <Badge variant="secondary" className="text-xs" style={{ backgroundColor: `${SCREEN_COLORS[selectedPair[0] % SCREEN_COLORS.length]}30`, color: SCREEN_COLORS[selectedPair[0] % SCREEN_COLORS.length] }}>
+                {latestByScreen[selectedPair[0]].screen?.name}
+              </Badge>
+              <span>&</span>
+              <Badge variant="secondary" className="text-xs" style={{ backgroundColor: `${SCREEN_COLORS[selectedPair[1] % SCREEN_COLORS.length]}30`, color: SCREEN_COLORS[selectedPair[1] % SCREEN_COLORS.length] }}>
+                {latestByScreen[selectedPair[1]].screen?.name}
+              </Badge>
+              <span className="text-muted-foreground">— {pairSymbols.length} symbols</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {pairSymbols.map((sym) => {
+                const inWatchlist = watchlistSymbolSet.has(sym);
+                return (
+                  <div key={sym} className="flex items-center gap-0.5">
+                    <Badge variant={inWatchlist ? "default" : "outline"} className="text-xs">
+                      {sym}
+                      {inWatchlist && <span className="ml-1">✓</span>}
+                    </Badge>
+                    {!inWatchlist && (
+                      <Button
+                        variant="ghost" size="sm" className="h-5 w-5 p-0"
+                        disabled={addingSymbol === sym}
+                        onClick={() => handleQuickAdd(sym)}
+                        title={`Add ${sym} to watchlist`}
+                      >
+                        <Plus className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </Card>
+
+      {/* Cross-Screen Matches Table */}
+      {crossScreenData.length > 0 && (
+        <Card>
+          <div className="p-4 pb-2">
+            <h3 className="text-sm font-semibold">Symbols in Multiple Screens</h3>
+            <p className="text-xs text-muted-foreground">
+              {crossScreenData.length} symbols appear in 2+ screens out of {totalUniqueSymbols} unique symbols.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Symbol</TableHead>
+                  <TableHead>Screens</TableHead>
+                  <TableHead className="w-24">Watchlist</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {crossScreenData.map(({ symbol, screenIndices }) => {
+                  const inWatchlist = watchlistSymbolSet.has(symbol);
+                  return (
+                    <TableRow key={symbol}>
+                      <TableCell className="font-medium text-sm">{symbol}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm text-muted-foreground">{screenIndices.length}×</span>
+                          {screenIndices.map((idx) => (
+                            <span
+                              key={idx}
+                              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
+                              style={{
+                                backgroundColor: `${SCREEN_COLORS[idx % SCREEN_COLORS.length]}20`,
+                                color: SCREEN_COLORS[idx % SCREEN_COLORS.length],
+                              }}
+                            >
+                              <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: SCREEN_COLORS[idx % SCREEN_COLORS.length] }} />
+                              {latestByScreen[idx].screen?.name ?? "?"}
+                            </span>
+                          ))}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {inWatchlist ? (
+                          <span className="text-emerald-600 dark:text-emerald-400 text-sm">✓</span>
+                        ) : (
+                          <Button
+                            variant="ghost" size="sm" className="h-6 px-2 text-xs"
+                            disabled={addingSymbol === symbol}
+                            onClick={() => handleQuickAdd(symbol)}
+                          >
+                            <Plus className="h-3 w-3 mr-1" />
+                            Add
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        </Card>
+      )}
+
+      {/* Watchlist Matches Table */}
+      {watchlistMatches.length > 0 && (
+        <Card>
+          <div className="p-4 pb-2">
+            <h3 className="text-sm font-semibold">Watchlist Matches</h3>
+            <p className="text-xs text-muted-foreground">
+              {watchlistMatches.length} watchlist symbols found across uploaded screens.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Symbol</TableHead>
+                  <TableHead>Screens</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {watchlistMatches.map(({ symbol, screenIndices }) => (
+                  <TableRow key={symbol}>
+                    <TableCell className="font-medium text-sm">{symbol}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1.5">
+                        {screenIndices.map((idx) => (
+                          <span
+                            key={idx}
+                            className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
+                            style={{
+                              backgroundColor: `${SCREEN_COLORS[idx % SCREEN_COLORS.length]}20`,
+                              color: SCREEN_COLORS[idx % SCREEN_COLORS.length],
+                            }}
+                          >
+                            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: SCREEN_COLORS[idx % SCREEN_COLORS.length] }} />
+                            {latestByScreen[idx].screen?.name ?? "?"}
+                          </span>
+                        ))}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
