@@ -1,71 +1,122 @@
 
 
-# Expanded Row Enrichment for Portfolio
+# FMP Price API Integration
 
-Adds `source` and `first_seen_at` columns to positions, then enriches the expanded row UI with metadata display, inline-editable fields, and quick action buttons.
+Adds real-time price data to the watchlist and portfolio using the Financial Modeling Prep API, with user-managed API key storage, auto-lookup on watchlist add, batch price refresh, and staleness indicators.
 
 ---
 
 ## Step 1: Database Migration
 
-Add two new columns to `positions` using the user's exact approach -- add `first_seen_at` without a default so existing rows stay `NULL`, then set the default for future inserts:
+Add `last_price_update` timestamp column to both `watchlist_entries` and `positions`:
 
 ```sql
-ALTER TABLE public.positions
-  ADD COLUMN source text,
-  ADD COLUMN first_seen_at timestamptz;
+ALTER TABLE public.watchlist_entries
+  ADD COLUMN last_price_update timestamptz;
 
 ALTER TABLE public.positions
-  ALTER COLUMN first_seen_at SET DEFAULT now();
+  ADD COLUMN last_price_update timestamptz;
 ```
 
-This means existing positions show a dash for "Date first tracked" while newly imported ones get a timestamp automatically.
+No default needed -- existing rows stay null (showing "never refreshed").
 
 ---
 
-## Step 2: Update CSV Import Logic (`src/components/UpdatePortfolioModal.tsx`)
+## Step 2: Extend Portfolio Settings for API Key
 
-The current upsert call (line ~163-178) sends all fields on conflict. For updates to existing rows, `first_seen_at` must not be overwritten. The fix:
+Update the `PortfolioSettings` type in `src/hooks/use-portfolio-settings.ts` to include an optional `fmp_api_key` string. The key is stored in the existing `portfolio_settings` JSONB column alongside allocation targets. No migration needed -- JSONB is flexible.
 
-- Do NOT include `first_seen_at` in the upsert payload at all. Since the column has a `DEFAULT now()`, new inserts automatically get a timestamp. For updates (conflict on `user_id,symbol`), the column is simply not touched, preserving the original value.
-- Similarly, `source` should not be included in the import upsert -- it is a user-edited field and should never be overwritten by CSV data.
-
-No changes to `notes` handling needed -- it is already excluded from the upsert.
-
----
-
-## Step 3: Enrich Expanded Rows in Portfolio (`src/pages/Portfolio.tsx`)
-
-Currently, expanded rows only show per-account breakdowns (lines 439-449). For stock positions (not CASH), add a detail section below the account rows:
-
-### 3a. Position Metadata
-- **Date first tracked**: Read-only. If `first_seen_at` is set, format as "Tracked since Jan 15, 2025". If null, show a dash.
-
-### 3b. Inline-Editable Fields
-- **Notes**: A text input pre-filled with `p.notes`. Placeholder: "Add a note..." Saves to the database on blur via a direct `supabase.from("positions").update({ notes }).eq("id", p.id)` call, then updates local state.
-- **Source**: Same pattern. Placeholder: "Where did you find this pick?" Saves `source` on blur.
-
-Both fields use a simple `<Input>` or `<Textarea>` component with local state initialized from the position, and an `onBlur` handler that persists changes.
-
-### 3c. Quick Actions
-- **Reclassify button**: Renders the existing `<CategorySelector>` component in the detail area, giving a deliberate way to re-categorize from the expanded view.
-- **Remove from portfolio button**: Styled as `variant="destructive"` outline. On click, opens an `AlertDialog` with:
-  - Title: "Remove [SYMBOL] from portfolio?"
-  - Description: "This cannot be undone. This position may reappear if it's still in your brokerage data on the next import."
-  - Confirm button deletes the row via `supabase.from("positions").delete().eq("id", p.id)`, removes it from local state, shows a success toast, and collapses the row.
-
-### 3d. Layout
-- Account sub-rows render first (existing behavior).
-- Below them, a visually separated detail panel (subtle top border, slightly different background) contains the metadata, editable fields, and action buttons.
-- The CASH row continues to show only account breakdowns -- no detail panel.
-
-### 3e. Single-expand behavior
-Already implemented (`expandedId` state) -- only one row can be open at a time.
+Update the Settings page (`src/pages/Settings.tsx`) to add a "Price Data API" card with:
+- A password-type input (masked by default) for the FMP API key
+- An eye toggle button to reveal/hide the key
+- The key saves alongside all other settings when the user clicks Save
 
 ---
 
-## Files affected
-1. **Database migration** -- adds `source` and `first_seen_at` columns
-2. `src/components/UpdatePortfolioModal.tsx` -- no changes needed (upsert already excludes `source`, `notes`, and `first_seen_at` since they aren't in the payload)
-3. `src/pages/Portfolio.tsx` -- expanded row detail section with metadata, editable fields, and remove/reclassify actions
+## Step 3: Create FMP API Helper (`src/lib/fmp-api.ts`)
+
+A utility module that handles all FMP API interactions with built-in caching:
+
+- `lookupSymbol(symbol, apiKey)` -- calls `/api/v3/profile/{symbol}` and returns company name, industry, sector, market cap, and current price
+- `fetchQuotes(symbols[], apiKey)` -- calls `/api/v3/quote/{sym1,sym2,...}` for batch price fetching (price, previous close, day change)
+- **Price cache**: In-memory Map with 60-second TTL so rapid page refreshes or re-renders don't make redundant calls
+- **Company info cache**: Separate Map with 24-hour TTL for industry/sector/market cap data
+- Both caches are module-level (persist for the session, cleared on page reload)
+
+All calls are made client-side with the API key as a query parameter. If FMP returns an error or the key is missing, functions return null gracefully so the UI falls back to manual/existing data.
+
+---
+
+## Step 4: Watchlist -- Auto-Lookup on Add (`src/components/AddToWatchlistModal.tsx`)
+
+When the user finishes typing a symbol (on blur of the symbol field), if an FMP API key is configured:
+
+1. Call `lookupSymbol(symbol, apiKey)`
+2. Show a compact preview card below the symbol field with the fetched data (company name, price, sector, market cap)
+3. Auto-populate the company name and price fields with fetched values
+4. The user can still manually override any auto-filled field
+5. If the lookup fails or no API key is configured, the form works exactly as it does today (manual entry)
+
+The modal will accept the API key as a prop, passed from the Watchlist page which reads it from `usePortfolioSettings`.
+
+Update `addEntry` in `use-watchlist.ts` to also accept and persist `industry`, `sector`, and `market_cap` fields so auto-looked-up data gets saved.
+
+---
+
+## Step 5: Watchlist -- Price Refresh on Page Load (`src/pages/Watchlist.tsx`)
+
+When the watchlist page loads and an FMP API key is configured:
+
+1. Collect all symbols from watchlist entries
+2. Call `fetchQuotes(symbols, apiKey)` in batches (FMP supports comma-separated symbols)
+3. Update each entry's `current_price`, `previous_close`, and `last_price_update` in the database
+4. Update local state so the UI reflects live prices immediately
+5. The 60-second cache in the FMP helper prevents redundant calls on rapid navigation
+
+This runs as a `useEffect` after initial data loads. A small loading indicator shows during the refresh. If no API key is set, this step is skipped entirely.
+
+---
+
+## Step 6: Portfolio -- Manual Price Refresh (`src/pages/Portfolio.tsx`)
+
+Add a "Refresh Prices" button next to the "Update Portfolio" button in the portfolio header:
+
+1. On click, collect all stock position symbols (exclude CASH)
+2. Call `fetchQuotes(symbols, apiKey)` 
+3. Update each position's `current_price`, recalculate `current_value` (shares x new price), and set `last_price_update`
+4. Persist updates to the database and refresh local state
+5. Show a toast on completion: "Prices updated for X positions"
+6. Button shows a spinner while fetching; disabled if no API key is configured (with a tooltip: "Set your FMP API key in Settings")
+
+---
+
+## Step 7: Staleness Indicator
+
+Add a small timestamp display below the summary cards on both the Watchlist and Portfolio pages:
+
+- Format: "Prices as of 2:34 PM" (using the most recent `last_price_update` across all entries/positions)
+- If the most recent update is more than 24 hours old, show with an amber warning icon and "Prices may be stale" text
+- If no prices have ever been refreshed (`last_price_update` is null for all), show "Prices not yet refreshed" with a subtle prompt to configure the API key (if missing)
+
+---
+
+## Files Affected
+
+1. **Database migration** -- adds `last_price_update` to `watchlist_entries` and `positions`
+2. `src/hooks/use-portfolio-settings.ts` -- extend `PortfolioSettings` type with optional `fmp_api_key`
+3. `src/pages/Settings.tsx` -- add API key input card
+4. `src/lib/fmp-api.ts` -- new file: FMP API helper with caching
+5. `src/components/AddToWatchlistModal.tsx` -- auto-lookup on symbol blur with preview card
+6. `src/hooks/use-watchlist.ts` -- extend `addEntry` to accept industry/sector/market_cap; add batch price refresh function
+7. `src/pages/Watchlist.tsx` -- trigger price refresh on load, show staleness indicator
+8. `src/pages/Portfolio.tsx` -- add "Refresh Prices" button, show staleness indicator
+
+---
+
+## Technical Notes
+
+- FMP API calls are made directly from the browser. The API key is stored in the user's RLS-protected settings row, so it is not exposed to other users. However, it will be visible in browser network requests -- this is standard for client-side API keys and matches the user's requested approach.
+- The batch quote endpoint supports multiple symbols in a single call (`/v3/quote/AAPL,MSFT,GOOG`), minimizing API usage.
+- Caching is in-memory only (module-level Maps) -- simple, no persistence needed. Cleared naturally on page reload.
+- Portfolio price refresh is intentionally manual (button click) per the requirements. The CSV import remains the primary data source for portfolio positions.
 
