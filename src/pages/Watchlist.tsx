@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,15 +18,17 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Eye, Plus, Settings, Search, Bell, ChevronDown, ChevronUp, ArrowUpDown, Trash2, X, Tag as TagIcon, Upload, FileSearch,
+  Eye, Plus, Settings, Search, Bell, ChevronDown, ChevronUp, ArrowUpDown, Trash2, X, Tag as TagIcon, Upload, FileSearch, RefreshCw, AlertTriangle, Clock,
 } from "lucide-react";
 import { useWatchlist, type WatchlistEntry } from "@/hooks/use-watchlist";
 import { useScreens } from "@/hooks/use-screens";
+import { usePortfolioSettings } from "@/hooks/use-portfolio-settings";
 import { AddToWatchlistModal } from "@/components/AddToWatchlistModal";
 import { ManageTagsModal } from "@/components/ManageTagsModal";
 import { ScreenUploadModal } from "@/components/ScreenUploadModal";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatMarketCap } from "@/lib/market-cap";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 /* ── Formatters ── */
 const fmtPrice = (n: number | null) =>
@@ -151,9 +153,12 @@ function SortHeader({
 export default function Watchlist() {
   const {
     entries, tags, loading, addEntry, deleteEntry, updateEntryNotes,
-    addEntryTag, removeEntryTag, createTag, updateTag, deleteTag, refetch: refetchWatchlist,
+    addEntryTag, removeEntryTag, createTag, updateTag, deleteTag, refreshPrices, refetch: refetchWatchlist,
   } = useWatchlist();
   const { screens, runs, createScreen, createRun, deleteScreen } = useScreens();
+  const { settings } = usePortfolioSettings();
+  const fmpApiKey = settings.fmp_api_key;
+  const [refreshing, setRefreshing] = useState(false);
 
   const [addOpen, setAddOpen] = useState(false);
   const [tagsOpen, setTagsOpen] = useState(false);
@@ -306,6 +311,34 @@ export default function Watchlist() {
     }
   };
 
+  // Auto-refresh prices on load
+  const [autoRefreshed, setAutoRefreshed] = useState(false);
+  useEffect(() => {
+    if (!loading && entries.length > 0 && fmpApiKey && !autoRefreshed) {
+      setAutoRefreshed(true);
+      setRefreshing(true);
+      refreshPrices(fmpApiKey).finally(() => setRefreshing(false));
+    }
+  }, [loading, entries.length, fmpApiKey, autoRefreshed, refreshPrices]);
+
+  const handleManualRefresh = async () => {
+    if (!fmpApiKey) return;
+    setRefreshing(true);
+    const count = await refreshPrices(fmpApiKey);
+    setRefreshing(false);
+  };
+
+  // Staleness
+  const latestUpdate = useMemo(() => {
+    const dates = entries
+      .map((e) => (e as any).last_price_update)
+      .filter(Boolean)
+      .map((d: string) => new Date(d).getTime());
+    return dates.length > 0 ? new Date(Math.max(...dates)) : null;
+  }, [entries]);
+
+  const isStale = latestUpdate ? Date.now() - latestUpdate.getTime() > 24 * 60 * 60 * 1000 : false;
+
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -318,8 +351,38 @@ export default function Watchlist() {
     <div className="p-6 space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Watchlist</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold">Watchlist</h1>
+          {latestUpdate && (
+            <span className={`flex items-center gap-1 text-xs ${isStale ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}>
+              {isStale && <AlertTriangle className="h-3 w-3" />}
+              <Clock className="h-3 w-3" />
+              Prices as of {latestUpdate.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+            </span>
+          )}
+          {!latestUpdate && entries.length > 0 && (
+            <span className="text-xs text-muted-foreground">
+              {fmpApiKey ? "Refreshing prices..." : "Set FMP API key in Settings for live prices"}
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-2">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleManualRefresh}
+                  disabled={!fmpApiKey || refreshing}
+                >
+                  <RefreshCw className={`mr-1 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+                  Refresh
+                </Button>
+              </TooltipTrigger>
+              {!fmpApiKey && <TooltipContent>Set your FMP API key in Settings</TooltipContent>}
+            </Tooltip>
+          </TooltipProvider>
           <Button variant="outline" size="sm" onClick={() => setScreenOpen(true)}>
             <Upload className="mr-1 h-4 w-4" />
             Upload Screen
@@ -335,7 +398,7 @@ export default function Watchlist() {
         </div>
       </div>
 
-      <AddToWatchlistModal open={addOpen} onOpenChange={setAddOpen} tags={tags} onSave={addEntry} />
+      <AddToWatchlistModal open={addOpen} onOpenChange={setAddOpen} tags={tags} fmpApiKey={fmpApiKey} onSave={addEntry} />
       <ManageTagsModal open={tagsOpen} onOpenChange={setTagsOpen} tags={tags} onCreate={createTag} onUpdate={updateTag} onDelete={deleteTag} />
       <ScreenUploadModal
         open={screenOpen}

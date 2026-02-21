@@ -5,12 +5,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { usePortfolioSettings, DEFAULT_SETTINGS, type PortfolioSettings } from "@/hooks/use-portfolio-settings";
 import { useToast } from "@/hooks/use-toast";
-import { RotateCcw, Save } from "lucide-react";
+import { RotateCcw, Save, Eye, EyeOff, Key } from "lucide-react";
 
 export default function Settings() {
   const { settings, updateSettings, loading } = usePortfolioSettings();
   const { toast } = useToast();
   const [draft, setDraft] = useState<PortfolioSettings>(settings);
+  const [showApiKey, setShowApiKey] = useState(false);
 
   useEffect(() => {
     setDraft(settings);
@@ -196,6 +197,47 @@ export default function Settings() {
                   className="pr-7"
                 />
                 <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">%</span>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Price Data API */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Key className="h-4 w-4" />
+            Price Data API
+          </CardTitle>
+          <CardDescription>
+            Enter your Financial Modeling Prep (FMP) API key to enable live price lookups and refreshes.
+            Get a free key at{" "}
+            <a href="https://financialmodelingprep.com" target="_blank" rel="noopener noreferrer" className="underline text-primary">
+              financialmodelingprep.com
+            </a>
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-1">
+            <Label htmlFor="fmp-key">API Key</Label>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Input
+                  id="fmp-key"
+                  type={showApiKey ? "text" : "password"}
+                  placeholder="Your FMP API key"
+                  value={draft.fmp_api_key ?? ""}
+                  onChange={(e) => setDraft((d) => ({ ...d, fmp_api_key: e.target.value }))}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowApiKey((v) => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
               </div>
             </div>
           </div>

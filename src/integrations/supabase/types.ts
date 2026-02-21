@@ -77,6 +77,7 @@ export type Database = {
           date_added: string | null
           first_seen_at: string | null
           id: string
+          last_price_update: string | null
           notes: string | null
           shares: number | null
           source: string | null
@@ -96,6 +97,7 @@ export type Database = {
           date_added?: string | null
           first_seen_at?: string | null
           id?: string
+          last_price_update?: string | null
           notes?: string | null
           shares?: number | null
           source?: string | null
@@ -115,6 +117,7 @@ export type Database = {
           date_added?: string | null
           first_seen_at?: string | null
           id?: string
+          last_price_update?: string | null
           notes?: string | null
           shares?: number | null
           source?: string | null
@@ -262,6 +265,7 @@ export type Database = {
           date_added: string
           id: string
           industry: string | null
+          last_price_update: string | null
           market_cap: number | null
           market_cap_category: string | null
           notes: string | null
@@ -279,6 +283,7 @@ export type Database = {
           date_added?: string
           id?: string
           industry?: string | null
+          last_price_update?: string | null
           market_cap?: number | null
           market_cap_category?: string | null
           notes?: string | null
@@ -296,6 +301,7 @@ export type Database = {
           date_added?: string
           id?: string
           industry?: string | null
+          last_price_update?: string | null
           market_cap?: number | null
           market_cap_category?: string | null
           notes?: string | null
