@@ -1,99 +1,71 @@
 
 
-# Settings Page + Portfolio Settings + Capital Deployment Guide
+# Expanded Row Enrichment for Portfolio
 
-This is a large feature that creates the foundation (settings table + page) and then layers on weight tracking, capital-to-goal calculations, a deploy capital guide, and category allocation vs targets -- all in the Portfolio dashboard.
+Adds `source` and `first_seen_at` columns to positions, then enriches the expanded row UI with metadata display, inline-editable fields, and quick action buttons.
 
 ---
 
-## Step 1: Create `portfolio_settings` table
+## Step 1: Database Migration
 
-A new database table with one row per user, storing all targets as JSONB.
+Add two new columns to `positions` using the user's exact approach -- add `first_seen_at` without a default so existing rows stay `NULL`, then set the default for future inserts:
 
-**Schema:**
-- `id` uuid, primary key, default `gen_random_uuid()`
-- `user_id` uuid, not null, unique
-- `settings` jsonb, not null, default (see below)
-- `created_at` timestamptz, default `now()`
-- `updated_at` timestamptz, default `now()`
+```sql
+ALTER TABLE public.positions
+  ADD COLUMN source text,
+  ADD COLUMN first_seen_at timestamptz;
 
-**Default JSONB value:**
-```json
-{
-  "category_targets": { "CORE": 50, "TITAN": 25, "CONSENSUS": 25 },
-  "position_count_target": { "min": 25, "max": 35 },
-  "tier_goals": {
-    "C1": 8.5, "C2": 6, "C3": 5, "TT": 2.5, "CON_MIN": 1, "CON_MAX": 5
-  }
-}
+ALTER TABLE public.positions
+  ALTER COLUMN first_seen_at SET DEFAULT now();
 ```
 
-**RLS policies:** Users can SELECT, INSERT, UPDATE their own rows (matching `auth.uid() = user_id`).
-
-**Trigger:** Attach the existing `update_updated_at_column` trigger.
+This means existing positions show a dash for "Date first tracked" while newly imported ones get a timestamp automatically.
 
 ---
 
-## Step 2: Create a custom hook -- `src/hooks/use-portfolio-settings.ts`
+## Step 2: Update CSV Import Logic (`src/components/UpdatePortfolioModal.tsx`)
 
-- Fetches the user's `portfolio_settings` row on mount
-- If no row exists, inserts one with defaults and returns the defaults
-- Exposes `settings`, `updateSettings(partial)`, and `loading`
-- Defines a TypeScript `PortfolioSettings` interface matching the JSONB shape
+The current upsert call (line ~163-178) sends all fields on conflict. For updates to existing rows, `first_seen_at` must not be overwritten. The fix:
 
----
+- Do NOT include `first_seen_at` in the upsert payload at all. Since the column has a `DEFAULT now()`, new inserts automatically get a timestamp. For updates (conflict on `user_id,symbol`), the column is simply not touched, preserving the original value.
+- Similarly, `source` should not be included in the import upsert -- it is a user-edited field and should never be overwritten by CSV data.
 
-## Step 3: Create the Settings page -- `src/pages/Settings.tsx`
-
-- Add `/settings` route in `App.tsx` as a protected route
-- Add a "Settings" nav item (with a `Settings` icon) to `AppLayout.tsx` sidebar
-- The page displays editable fields grouped into cards:
-  - **Category Allocation Targets** -- three number inputs for Core/Titan/Consensus %, with validation they sum to 100
-  - **Position Count Target** -- min/max inputs (default 25-35)
-  - **Per-Tier Weight Goals** -- inputs for C1 (8.5%), C2 (6%), C3 (5%), TT (2.5%), CON min (1%), CON max (5%)
-- A "Save" button persists changes via the hook
-- A "Reset to Defaults" button restores defaults
+No changes to `notes` handling needed -- it is already excluded from the upsert.
 
 ---
 
-## Step 4: Enhance the Portfolio page -- `src/pages/Portfolio.tsx`
+## Step 3: Enrich Expanded Rows in Portfolio (`src/pages/Portfolio.tsx`)
 
-All of the following features use the saved settings from `use-portfolio-settings`.
+Currently, expanded rows only show per-account breakdowns (lines 439-449). For stock positions (not CASH), add a detail section below the account rows:
 
-### 4a. Weight Progress Bars (per position row)
-- In the Weight column, for categorized positions, show a small progress bar below the weight percentage
-- The bar's target comes from the tier goal (e.g., C1 = 8.5%, TT = 2.5%)
-- Unassigned or CASH positions show no bar
-- Friendly/informational style -- muted colors, no red warnings
+### 3a. Position Metadata
+- **Date first tracked**: Read-only. If `first_seen_at` is set, format as "Tracked since Jan 15, 2025". If null, show a dash.
 
-### 4b. Capital to Goal Column
-- New column after Weight: "To Goal"
-- For positions below their tier target: show `$X,XXX to goal` in muted text
-- For positions at or above target: show a green checkmark and "At goal"
-- Special case: Consensus positions above 5% (CON_MAX) show an amber message: "Above 5% cap -- consider trimming or reclassifying to Core"
-- CASH row shows nothing
+### 3b. Inline-Editable Fields
+- **Notes**: A text input pre-filled with `p.notes`. Placeholder: "Add a note..." Saves to the database on blur via a direct `supabase.from("positions").update({ notes }).eq("id", p.id)` call, then updates local state.
+- **Source**: Same pattern. Placeholder: "Where did you find this pick?" Saves `source` on blur.
 
-### 4c. Category Allocation Overview (below summary cards)
-- Update the existing category breakdown card to show target percentages alongside current ones
-- Each category legend item shows: current % / target % with a subtle progress indicator
-- No warnings -- just informational data display
+Both fields use a simple `<Input>` or `<Textarea>` component with local state initialized from the position, and an `onBlur` handler that persists changes.
 
-### 4d. Deploy Capital Guide (collapsible section below positions table)
-- Only visible when `cashBalance > 0`
-- Collapsible panel using the Collapsible component, titled "Deploy Capital"
-- Lists all below-goal positions sorted by conviction tier priority: C1 first, then C2, C3, TT, CON
-- Each row shows: symbol, current weight, goal weight, dollar amount to reach goal
-- Answers "I have $X to invest -- where should it go?"
+### 3c. Quick Actions
+- **Reclassify button**: Renders the existing `<CategorySelector>` component in the detail area, giving a deliberate way to re-categorize from the expanded view.
+- **Remove from portfolio button**: Styled as `variant="destructive"` outline. On click, opens an `AlertDialog` with:
+  - Title: "Remove [SYMBOL] from portfolio?"
+  - Description: "This cannot be undone. This position may reappear if it's still in your brokerage data on the next import."
+  - Confirm button deletes the row via `supabase.from("positions").delete().eq("id", p.id)`, removes it from local state, shows a success toast, and collapses the row.
+
+### 3d. Layout
+- Account sub-rows render first (existing behavior).
+- Below them, a visually separated detail panel (subtle top border, slightly different background) contains the metadata, editable fields, and action buttons.
+- The CASH row continues to show only account breakdowns -- no detail panel.
+
+### 3e. Single-expand behavior
+Already implemented (`expandedId` state) -- only one row can be open at a time.
 
 ---
 
-## Files to create
-1. `src/hooks/use-portfolio-settings.ts` -- settings hook
-2. `src/pages/Settings.tsx` -- settings page
-
-## Files to modify
-1. Database migration -- new `portfolio_settings` table
-2. `src/App.tsx` -- add `/settings` route
-3. `src/components/AppLayout.tsx` -- add Settings nav item
-4. `src/pages/Portfolio.tsx` -- add weight bars, capital-to-goal column, allocation overview, deploy capital guide
+## Files affected
+1. **Database migration** -- adds `source` and `first_seen_at` columns
+2. `src/components/UpdatePortfolioModal.tsx` -- no changes needed (upsert already excludes `source`, `notes`, and `first_seen_at` since they aren't in the payload)
+3. `src/pages/Portfolio.tsx` -- expanded row detail section with metadata, editable fields, and remove/reclassify actions
 
