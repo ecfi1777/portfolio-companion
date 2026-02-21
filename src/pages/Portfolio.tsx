@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { DollarSign, TrendingUp, Hash, ChevronRight, Upload, ArrowUpDown, Tag, Banknote, ChevronDown, Check, AlertTriangle, Trash2, Calendar } from "lucide-react";
+import { DollarSign, TrendingUp, Hash, ChevronRight, Upload, ArrowUpDown, Tag, Banknote, ChevronDown, Check, AlertTriangle, Trash2, Calendar, RefreshCw, Clock } from "lucide-react";
 import { UpdatePortfolioModal } from "@/components/UpdatePortfolioModal";
 import { CategorySelector } from "@/components/CategorySelector";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -15,6 +15,8 @@ import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { format } from "date-fns";
 import type { Tables, Database } from "@/integrations/supabase/types";
+import { fetchQuotes } from "@/lib/fmp-api";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 type Position = Tables<"positions">;
 type PortfolioSummary = Tables<"portfolio_summary">;
@@ -216,6 +218,8 @@ export default function Portfolio() {
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [deployOpen, setDeployOpen] = useState(false);
   const { settings, loading: settingsLoading } = usePortfolioSettings();
+  const fmpApiKey = settings.fmp_api_key;
+  const [refreshing, setRefreshing] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!user) return;
@@ -341,6 +345,16 @@ export default function Portfolio() {
     </TableHead>
   );
 
+  // Staleness
+  const latestPriceUpdate = useMemo(() => {
+    const dates = positions
+      .map((p) => (p as any).last_price_update)
+      .filter(Boolean)
+      .map((d: string) => new Date(d).getTime());
+    return dates.length > 0 ? new Date(Math.max(...dates)) : null;
+  }, [positions]);
+  const isPriceStale = latestPriceUpdate ? Date.now() - latestPriceUpdate.getTime() > 24 * 60 * 60 * 1000 : false;
+
   if (loading || settingsLoading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -349,14 +363,73 @@ export default function Portfolio() {
     );
   }
 
+  // Portfolio price refresh
+  const handleRefreshPrices = async () => {
+    if (!fmpApiKey || !user) return;
+    setRefreshing(true);
+    const symbols = stockPositions.map((p) => p.symbol);
+    const quotes = await fetchQuotes(symbols, fmpApiKey);
+    if (quotes.length > 0) {
+      const now = new Date().toISOString();
+      for (const q of quotes) {
+        const pos = positions.find((p) => p.symbol === q.symbol);
+        if (!pos) continue;
+        const newValue = (pos.shares ?? 0) * q.price;
+        await supabase
+          .from("positions")
+          .update({
+            current_price: q.price,
+            current_value: newValue,
+            last_price_update: now,
+          } as any)
+          .eq("id", pos.id);
+      }
+      setPositions((prev) =>
+        prev.map((p) => {
+          const q = quotes.find((qq) => qq.symbol === p.symbol);
+          if (!q) return p;
+          return { ...p, current_price: q.price, current_value: (p.shares ?? 0) * q.price, last_price_update: now } as any;
+        })
+      );
+      toast({ title: "Prices updated", description: `Updated ${quotes.length} positions.` });
+    }
+    setRefreshing(false);
+  };
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Portfolio</h1>
-        <Button onClick={() => setModalOpen(true)}>
-          <Upload className="mr-2 h-4 w-4" />
-          Update Portfolio
-        </Button>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold">Portfolio</h1>
+          {latestPriceUpdate && (
+            <span className={`flex items-center gap-1 text-xs ${isPriceStale ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}>
+              {isPriceStale && <AlertTriangle className="h-3 w-3" />}
+              <Clock className="h-3 w-3" />
+              Prices as of {latestPriceUpdate.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  onClick={handleRefreshPrices}
+                  disabled={!fmpApiKey || refreshing}
+                >
+                  <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+                  Refresh Prices
+                </Button>
+              </TooltipTrigger>
+              {!fmpApiKey && <TooltipContent>Set your FMP API key in Settings</TooltipContent>}
+            </Tooltip>
+          </TooltipProvider>
+          <Button onClick={() => setModalOpen(true)}>
+            <Upload className="mr-2 h-4 w-4" />
+            Update Portfolio
+          </Button>
+        </div>
       </div>
 
       <UpdatePortfolioModal open={modalOpen} onOpenChange={setModalOpen} onSuccess={fetchData} />

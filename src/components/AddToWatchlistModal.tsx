@@ -4,27 +4,64 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Loader2 } from "lucide-react";
+import { lookupSymbol, type ProfileData } from "@/lib/fmp-api";
+import { formatMarketCap, getMarketCapCategory } from "@/lib/market-cap";
 import type { Tag } from "@/hooks/use-watchlist";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   tags: Tag[];
-  onSave: (data: { symbol: string; company_name?: string; price_when_added?: number; notes?: string; tag_ids?: string[] }) => Promise<void>;
+  fmpApiKey?: string;
+  onSave: (data: {
+    symbol: string;
+    company_name?: string;
+    price_when_added?: number;
+    notes?: string;
+    tag_ids?: string[];
+    industry?: string;
+    sector?: string;
+    market_cap?: number;
+  }) => Promise<void>;
 }
 
-export function AddToWatchlistModal({ open, onOpenChange, tags, onSave }: Props) {
+export function AddToWatchlistModal({ open, onOpenChange, tags, fmpApiKey, onSave }: Props) {
   const [symbol, setSymbol] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [price, setPrice] = useState("");
   const [notes, setNotes] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  const [looking, setLooking] = useState(false);
+  const [preview, setPreview] = useState<ProfileData | null>(null);
+  const [industry, setIndustry] = useState("");
+  const [sector, setSector] = useState("");
+  const [marketCap, setMarketCap] = useState<number | null>(null);
 
   const activeTags = tags.filter((t) => t.is_active);
 
   const toggleTag = (id: string) => {
     setSelectedTags((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]));
+  };
+
+  const handleSymbolBlur = async () => {
+    const sym = symbol.trim().toUpperCase();
+    if (!sym || !fmpApiKey) return;
+    setLooking(true);
+    const data = await lookupSymbol(sym, fmpApiKey);
+    setLooking(false);
+    if (data) {
+      setPreview(data);
+      if (!companyName) setCompanyName(data.companyName);
+      if (!price) setPrice(data.price.toString());
+      setIndustry(data.industry);
+      setSector(data.sector);
+      setMarketCap(data.mktCap);
+    } else {
+      setPreview(null);
+    }
   };
 
   const handleSave = async () => {
@@ -36,6 +73,9 @@ export function AddToWatchlistModal({ open, onOpenChange, tags, onSave }: Props)
       price_when_added: price ? parseFloat(price) : undefined,
       notes: notes.trim() || undefined,
       tag_ids: selectedTags.length > 0 ? selectedTags : undefined,
+      industry: industry || undefined,
+      sector: sector || undefined,
+      market_cap: marketCap ?? undefined,
     });
     setSaving(false);
     setSymbol("");
@@ -43,6 +83,10 @@ export function AddToWatchlistModal({ open, onOpenChange, tags, onSave }: Props)
     setPrice("");
     setNotes("");
     setSelectedTags([]);
+    setPreview(null);
+    setIndustry("");
+    setSector("");
+    setMarketCap(null);
     onOpenChange(false);
   };
 
@@ -55,8 +99,40 @@ export function AddToWatchlistModal({ open, onOpenChange, tags, onSave }: Props)
         <div className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="symbol">Symbol *</Label>
-            <Input id="symbol" placeholder="AAPL" value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} />
+            <div className="relative">
+              <Input
+                id="symbol"
+                placeholder="AAPL"
+                value={symbol}
+                onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+                onBlur={handleSymbolBlur}
+              />
+              {looking && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />}
+            </div>
           </div>
+
+          {/* Preview card from FMP lookup */}
+          {preview && (
+            <div className="rounded-md border bg-muted/50 p-3 space-y-1 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="font-medium">{preview.companyName}</span>
+                <span className="font-mono">${preview.price.toFixed(2)}</span>
+              </div>
+              <div className="flex items-center gap-2 text-muted-foreground text-xs">
+                {preview.sector && <span>{preview.sector}</span>}
+                {preview.industry && <><span>·</span><span>{preview.industry}</span></>}
+                {preview.mktCap > 0 && (
+                  <>
+                    <span>·</span>
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                      {getMarketCapCategory(preview.mktCap)} — {formatMarketCap(preview.mktCap)}
+                    </Badge>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label htmlFor="company">Company Name</Label>
             <Input id="company" placeholder="Apple Inc." value={companyName} onChange={(e) => setCompanyName(e.target.value)} />

@@ -9,6 +9,7 @@ export interface PortfolioSettings {
     C1: number; C2: number; C3: number;
     TT: number; CON_MIN: number; CON_MAX: number;
   };
+  fmp_api_key?: string;
 }
 
 export const DEFAULT_SETTINGS: PortfolioSettings = {

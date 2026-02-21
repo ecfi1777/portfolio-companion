@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "@/hooks/use-toast";
 import { getMarketCapCategory } from "@/lib/market-cap";
+import { fetchQuotes } from "@/lib/fmp-api";
 
 export interface WatchlistEntry {
   id: string;
@@ -18,6 +19,7 @@ export interface WatchlistEntry {
   market_cap: number | null;
   market_cap_category: string | null;
   notes: string | null;
+  last_price_update: string | null;
   created_at: string;
   updated_at: string;
   tags?: Tag[];
@@ -137,8 +139,12 @@ export function useWatchlist() {
     price_when_added?: number;
     notes?: string;
     tag_ids?: string[];
+    industry?: string;
+    sector?: string;
+    market_cap?: number;
   }) => {
     if (!user) return;
+    const mktCapCategory = data.market_cap ? getMarketCapCategory(data.market_cap) : null;
     const { data: inserted, error } = await supabase
       .from("watchlist_entries")
       .insert({
@@ -148,6 +154,10 @@ export function useWatchlist() {
         price_when_added: data.price_when_added ?? null,
         current_price: data.price_when_added ?? null,
         notes: data.notes || null,
+        industry: data.industry || null,
+        sector: data.sector || null,
+        market_cap: data.market_cap ?? null,
+        market_cap_category: mktCapCategory,
       })
       .select()
       .single();
@@ -222,6 +232,34 @@ export function useWatchlist() {
     await fetchAll();
   };
 
+  const refreshPrices = useCallback(async (apiKey: string) => {
+    if (!user || entries.length === 0 || !apiKey) return;
+    const symbols = entries.map((e) => e.symbol);
+    const quotes = await fetchQuotes(symbols, apiKey);
+    if (quotes.length === 0) return;
+    const now = new Date().toISOString();
+    for (const q of quotes) {
+      await supabase
+        .from("watchlist_entries")
+        .update({
+          current_price: q.price,
+          previous_close: q.previousClose,
+          last_price_update: now,
+        } as any)
+        .eq("user_id", user.id)
+        .eq("symbol", q.symbol);
+    }
+    // Update local state
+    setEntries((prev) =>
+      prev.map((e) => {
+        const q = quotes.find((qq) => qq.symbol === e.symbol);
+        if (!q) return e;
+        return { ...e, current_price: q.price, previous_close: q.previousClose, last_price_update: now };
+      })
+    );
+    return quotes.length;
+  }, [user, entries]);
+
   return {
     entries: enrichedEntries,
     tags: tagsWithCounts,
@@ -234,6 +272,7 @@ export function useWatchlist() {
     createTag,
     updateTag,
     deleteTag,
+    refreshPrices,
     refetch: fetchAll,
   };
 }
