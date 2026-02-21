@@ -75,9 +75,11 @@ export type Database = {
           current_price: number | null
           current_value: number | null
           date_added: string | null
+          first_seen_at: string | null
           id: string
           notes: string | null
           shares: number | null
+          source: string | null
           symbol: string
           tier: Database["public"]["Enums"]["position_tier"] | null
           updated_at: string
@@ -92,9 +94,11 @@ export type Database = {
           current_price?: number | null
           current_value?: number | null
           date_added?: string | null
+          first_seen_at?: string | null
           id?: string
           notes?: string | null
           shares?: number | null
+          source?: string | null
           symbol: string
           tier?: Database["public"]["Enums"]["position_tier"] | null
           updated_at?: string
@@ -109,9 +113,11 @@ export type Database = {
           current_price?: number | null
           current_value?: number | null
           date_added?: string | null
+          first_seen_at?: string | null
           id?: string
           notes?: string | null
           shares?: number | null
+          source?: string | null
           symbol?: string
           tier?: Database["public"]["Enums"]["position_tier"] | null
           updated_at?: string
