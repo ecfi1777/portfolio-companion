@@ -4,9 +4,11 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { DollarSign, TrendingUp, Hash, ChevronRight, Upload, ArrowUpDown, Tag, Banknote } from "lucide-react";
+import { DollarSign, TrendingUp, Hash, ChevronRight, Upload, ArrowUpDown, Tag, Banknote, ChevronDown, Check, AlertTriangle } from "lucide-react";
 import { UpdatePortfolioModal } from "@/components/UpdatePortfolioModal";
 import { CategorySelector } from "@/components/CategorySelector";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { usePortfolioSettings, type PortfolioSettings } from "@/hooks/use-portfolio-settings";
 import type { Tables, Database } from "@/integrations/supabase/types";
 
 type Position = Tables<"positions">;
@@ -47,6 +49,35 @@ const CATEGORY_COLORS: Record<string, { bg: string; text: string; bar: string }>
   Unassigned: { bg: "bg-muted", text: "text-muted-foreground", bar: "bg-muted-foreground/30" },
 };
 
+const TIER_ORDER: Record<string, number> = { C1: 0, C2: 1, C3: 2, TT: 3, CON: 4 };
+
+function getTierGoal(tier: Tier, settings: PortfolioSettings): number | null {
+  if (!tier) return null;
+  if (tier === "CON") return settings.tier_goals.CON_MIN;
+  return settings.tier_goals[tier] ?? null;
+}
+
+function getCapitalToGoal(
+  weight: number,
+  tier: Tier,
+  currentValue: number,
+  grandTotal: number,
+  settings: PortfolioSettings
+): { label: string; type: "below" | "at" | "above_cap" } | null {
+  if (!tier) return null;
+  const goal = getTierGoal(tier, settings);
+  if (goal == null) return null;
+
+  if (tier === "CON" && weight > settings.tier_goals.CON_MAX) {
+    return { label: `Above ${settings.tier_goals.CON_MAX}% cap`, type: "above_cap" };
+  }
+
+  const goalValue = (goal / 100) * grandTotal;
+  const diff = goalValue - currentValue;
+  if (diff <= 0) return { label: "At goal", type: "at" };
+  return { label: `${fmt(diff)} to goal`, type: "below" };
+}
+
 export default function Portfolio() {
   const { user } = useAuth();
   const [positions, setPositions] = useState<Position[]>([]);
@@ -56,6 +87,8 @@ export default function Portfolio() {
   const [modalOpen, setModalOpen] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("current_value");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [deployOpen, setDeployOpen] = useState(false);
+  const { settings, loading: settingsLoading } = usePortfolioSettings();
 
   const fetchData = useCallback(async () => {
     if (!user) return;
@@ -72,7 +105,7 @@ export default function Portfolio() {
     fetchData();
   }, [fetchData]);
 
-  // Derived calculations — exclude CASH row from stock-specific metrics
+  // Derived calculations
   const stockPositions = positions.filter((p) => p.symbol !== "CASH");
   const cashPosition = positions.find((p) => p.symbol === "CASH");
   const totalEquity = stockPositions.reduce((sum, p) => sum + (p.current_value ?? 0), 0);
@@ -94,8 +127,35 @@ export default function Portfolio() {
       name,
       value,
       pct: totalEquity > 0 ? (value / totalEquity) * 100 : 0,
+      target: name !== "Unassigned" ? (settings.category_targets as Record<string, number>)[name] ?? 0 : 0,
     }));
-  }, [stockPositions, totalEquity]);
+  }, [stockPositions, totalEquity, settings]);
+
+  // Deploy capital data
+  const deployCapitalList = useMemo(() => {
+    if (cashBalance <= 0 || grandTotal <= 0) return [];
+    return stockPositions
+      .filter((p) => p.tier != null)
+      .map((p) => {
+        const weight = ((p.current_value ?? 0) / grandTotal) * 100;
+        const goal = getTierGoal(p.tier, settings);
+        if (goal == null) return null;
+        const goalValue = (goal / 100) * grandTotal;
+        const diff = goalValue - (p.current_value ?? 0);
+        if (diff <= 0) return null;
+        return {
+          symbol: p.symbol,
+          tier: p.tier!,
+          weight,
+          goal,
+          toGoal: diff,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => (TIER_ORDER[a!.tier] ?? 99) - (TIER_ORDER[b!.tier] ?? 99)) as {
+      symbol: string; tier: string; weight: number; goal: number; toGoal: number;
+    }[];
+  }, [stockPositions, cashBalance, grandTotal, settings]);
 
   // Sorting
   const sortedPositions = useMemo(() => {
@@ -154,7 +214,7 @@ export default function Portfolio() {
     </TableHead>
   );
 
-  if (loading) {
+  if (loading || settingsLoading) {
     return (
       <div className="flex h-full items-center justify-center">
         <p className="text-muted-foreground">Loading portfolio...</p>
@@ -219,7 +279,7 @@ export default function Portfolio() {
         </Card>
       </div>
 
-      {/* Category Breakdown */}
+      {/* Category Allocation Overview */}
       {positions.length > 0 && (
         <Card>
           <CardContent className="py-4">
@@ -233,13 +293,29 @@ export default function Portfolio() {
                 />
               ))}
             </div>
-            {/* Legend */}
+            {/* Legend with targets */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {categoryBreakdown.map((c) => (
                 <div key={c.name} className={`rounded-md px-3 py-2 ${CATEGORY_COLORS[c.name]?.bg ?? "bg-muted"}`}>
                   <p className={`text-xs font-medium ${CATEGORY_COLORS[c.name]?.text ?? "text-muted-foreground"}`}>{c.name}</p>
                   <p className="text-sm font-bold">{fmt(c.value)}</p>
-                  <p className="text-xs text-muted-foreground">{fmtPct(c.pct)}</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">{fmtPct(c.pct)}</span>
+                    {c.target > 0 && (
+                      <>
+                        <span className="text-xs text-muted-foreground/50">/</span>
+                        <span className="text-xs text-muted-foreground">{fmtPct(c.target)} target</span>
+                      </>
+                    )}
+                  </div>
+                  {c.target > 0 && (
+                    <div className="mt-1.5 h-1 w-full rounded-full bg-muted-foreground/10 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${CATEGORY_COLORS[c.name]?.bar ?? "bg-muted"} opacity-60 transition-all`}
+                        style={{ width: `${Math.min((c.pct / c.target) * 100, 100)}%` }}
+                      />
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -270,6 +346,7 @@ export default function Portfolio() {
                   <SortableHead label="G/L ($)" sortKeyName="gainLossDollar" className="text-right" />
                   <SortableHead label="G/L (%)" sortKeyName="gainLossPct" className="text-right" />
                   <SortableHead label="Weight" sortKeyName="weight" className="text-right" />
+                  <TableHead className="text-right">To Goal</TableHead>
                   <SortableHead label="Category" sortKeyName="category" />
                 </TableRow>
               </TableHeader>
@@ -283,6 +360,8 @@ export default function Portfolio() {
                   const glPct = isCash ? 0 : (p.cost_basis ?? 0) > 0 ? (gl / (p.cost_basis ?? 1)) * 100 : 0;
                   const weight = grandTotal > 0 ? ((p.current_value ?? 0) / grandTotal) * 100 : 0;
                   const glColor = isCash ? "text-muted-foreground" : gl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400";
+                  const tierGoal = getTierGoal(p.tier, settings);
+                  const capitalToGoal = isCash ? null : getCapitalToGoal(weight, p.tier, p.current_value ?? 0, grandTotal, settings);
 
                   return (
                     <Fragment key={p.id}>
@@ -314,7 +393,36 @@ export default function Portfolio() {
                         <TableCell className={`text-right ${glColor}`}>
                           {isCash ? "0.00%" : `${gl >= 0 ? "+" : ""}${fmtPct(glPct)}`}
                         </TableCell>
-                        <TableCell className="text-right text-muted-foreground">{fmtPct(weight)}</TableCell>
+                        {/* Weight + progress bar */}
+                        <TableCell className="text-right">
+                          <span className="text-muted-foreground">{fmtPct(weight)}</span>
+                          {tierGoal != null && !isCash && (
+                            <div className="mt-1 h-1 w-full min-w-[48px] rounded-full bg-muted-foreground/10 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all ${
+                                  CATEGORY_COLORS[p.category ?? ""]?.bar ?? "bg-primary"
+                                } opacity-70`}
+                                style={{ width: `${Math.min((weight / tierGoal) * 100, 100)}%` }}
+                              />
+                            </div>
+                          )}
+                        </TableCell>
+                        {/* Capital to Goal */}
+                        <TableCell className="text-right text-xs whitespace-nowrap">
+                          {isCash ? "" : capitalToGoal == null ? (
+                            <span className="text-muted-foreground/40">—</span>
+                          ) : capitalToGoal.type === "at" ? (
+                            <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                              <Check className="h-3 w-3" /> At goal
+                            </span>
+                          ) : capitalToGoal.type === "above_cap" ? (
+                            <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400" title="Consider trimming or reclassifying to Core">
+                              <AlertTriangle className="h-3 w-3" /> {capitalToGoal.label}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">{capitalToGoal.label}</span>
+                          )}
+                        </TableCell>
                         <TableCell>
                           {isCash ? (
                             <span className="text-xs text-muted-foreground/50 px-2">—</span>
@@ -336,7 +444,7 @@ export default function Portfolio() {
                           <TableCell className="text-right text-sm text-muted-foreground">{isCash ? fmt(acct.shares) : fmtShares(acct.shares)}</TableCell>
                           <TableCell></TableCell>
                           <TableCell className="text-right text-sm text-muted-foreground">{fmt(acct.value)}</TableCell>
-                          <TableCell colSpan={5}></TableCell>
+                          <TableCell colSpan={6}></TableCell>
                         </TableRow>
                       ))}
                     </Fragment>
@@ -346,6 +454,62 @@ export default function Portfolio() {
             </Table>
           </div>
         </Card>
+      )}
+
+      {/* Deploy Capital Guide */}
+      {cashBalance > 0 && deployCapitalList.length > 0 && (
+        <Collapsible open={deployOpen} onOpenChange={setDeployOpen}>
+          <Card>
+            <CollapsibleTrigger asChild>
+              <CardHeader className="cursor-pointer hover:bg-muted/30 transition-colors">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <DollarSign className="h-4 w-4" />
+                    Deploy Capital
+                    <span className="text-sm font-normal text-muted-foreground">
+                      — {fmt(cashBalance)} available
+                    </span>
+                  </CardTitle>
+                  <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${deployOpen ? "rotate-180" : ""}`} />
+                </div>
+              </CardHeader>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <CardContent className="pt-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Symbol</TableHead>
+                      <TableHead>Tier</TableHead>
+                      <TableHead className="text-right">Current</TableHead>
+                      <TableHead className="text-right">Goal</TableHead>
+                      <TableHead className="text-right">To Goal</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {deployCapitalList.map((item) => (
+                      <TableRow key={item.symbol}>
+                        <TableCell className="font-medium">{item.symbol}</TableCell>
+                        <TableCell>
+                          <span className={`text-xs px-1.5 py-0.5 rounded ${
+                            CATEGORY_COLORS[item.tier.startsWith("C") ? "CORE" : item.tier === "TT" ? "TITAN" : "CONSENSUS"]?.bg ?? ""
+                          } ${
+                            CATEGORY_COLORS[item.tier.startsWith("C") ? "CORE" : item.tier === "TT" ? "TITAN" : "CONSENSUS"]?.text ?? ""
+                          }`}>
+                            {item.tier}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right text-muted-foreground">{fmtPct(item.weight)}</TableCell>
+                        <TableCell className="text-right text-muted-foreground">{fmtPct(item.goal)}</TableCell>
+                        <TableCell className="text-right font-medium">{fmt(item.toGoal)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </CollapsibleContent>
+          </Card>
+        </Collapsible>
       )}
     </div>
   );

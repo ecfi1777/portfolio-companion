@@ -3,12 +3,13 @@ import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
-import { TrendingUp, BarChart3, Eye, LogOut } from "lucide-react";
+import { TrendingUp, BarChart3, Eye, LogOut, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { to: "/", label: "Portfolio", icon: BarChart3 },
   { to: "/watchlist", label: "Watchlist", icon: Eye },
+  { to: "/settings", label: "Settings", icon: Settings },
 ];
 
 export function AppLayout({ children }: { children: ReactNode }) {
