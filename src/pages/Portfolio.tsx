@@ -4,11 +4,16 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { DollarSign, TrendingUp, Hash, ChevronRight, Upload, ArrowUpDown, Tag, Banknote, ChevronDown, Check, AlertTriangle } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { DollarSign, TrendingUp, Hash, ChevronRight, Upload, ArrowUpDown, Tag, Banknote, ChevronDown, Check, AlertTriangle, Trash2, Calendar } from "lucide-react";
 import { UpdatePortfolioModal } from "@/components/UpdatePortfolioModal";
 import { CategorySelector } from "@/components/CategorySelector";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { usePortfolioSettings, type PortfolioSettings } from "@/hooks/use-portfolio-settings";
+import { useToast } from "@/hooks/use-toast";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { format } from "date-fns";
 import type { Tables, Database } from "@/integrations/supabase/types";
 
 type Position = Tables<"positions">;
@@ -78,8 +83,130 @@ function getCapitalToGoal(
   return { label: `${fmt(diff)} to goal`, type: "below" };
 }
 
+function PositionDetailPanel({
+  position,
+  onUpdate,
+  onDelete,
+  onCategoryUpdate,
+}: {
+  position: Position & { source?: string | null; first_seen_at?: string | null };
+  onUpdate: (updates: Partial<Position>) => void;
+  onDelete: () => void;
+  onCategoryUpdate: (cat: Category, tier: Tier) => void;
+}) {
+  const { toast } = useToast();
+  const [notes, setNotes] = useState(position.notes ?? "");
+  const [source, setSource] = useState((position as any).source ?? "");
+  const [deleting, setDeleting] = useState(false);
+
+  const saveField = async (field: string, value: string) => {
+    const { error } = await supabase
+      .from("positions")
+      .update({ [field]: value || null } as any)
+      .eq("id", position.id);
+    if (error) {
+      toast({ title: "Save failed", description: error.message, variant: "destructive" });
+    } else {
+      onUpdate({ [field]: value || null } as any);
+    }
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    const { error } = await supabase.from("positions").delete().eq("id", position.id);
+    if (error) {
+      toast({ title: "Delete failed", description: error.message, variant: "destructive" });
+      setDeleting(false);
+    } else {
+      onDelete();
+    }
+  };
+
+  const firstSeen = (position as any).first_seen_at;
+
+  return (
+    <div className="px-6 py-4 space-y-4">
+      {/* Metadata */}
+      <div className="flex items-center gap-4 text-sm text-muted-foreground">
+        <Calendar className="h-3.5 w-3.5" />
+        <span>
+          {firstSeen
+            ? `Tracked since ${format(new Date(firstSeen), "MMM d, yyyy")}`
+            : "—"}
+        </span>
+      </div>
+
+      {/* Editable fields */}
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-muted-foreground">Notes</label>
+          <Textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            onBlur={() => {
+              if (notes !== (position.notes ?? "")) saveField("notes", notes);
+            }}
+            placeholder="Add a note..."
+            className="min-h-[60px] text-sm resize-none"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-muted-foreground">Source</label>
+          <Input
+            value={source}
+            onChange={(e) => setSource(e.target.value)}
+            onBlur={() => {
+              if (source !== ((position as any).source ?? "")) saveField("source", source);
+            }}
+            placeholder="Where did you find this pick?"
+            className="text-sm"
+          />
+        </div>
+      </div>
+
+      {/* Quick Actions */}
+      <div className="flex items-center gap-3 pt-1">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">Reclassify:</span>
+          <CategorySelector
+            positionId={position.id}
+            category={position.category}
+            tier={position.tier}
+            onUpdate={onCategoryUpdate}
+          />
+        </div>
+        <div className="ml-auto">
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" size="sm" className="text-destructive border-destructive/30 hover:bg-destructive/10">
+                <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                Remove
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Remove {position.symbol} from portfolio?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This cannot be undone. This position may reappear if it's still in your brokerage data on the next import.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleDelete} disabled={deleting} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                  {deleting ? "Removing..." : "Remove"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Portfolio() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [positions, setPositions] = useState<Position[]>([]);
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -447,6 +574,26 @@ export default function Portfolio() {
                           <TableCell colSpan={6}></TableCell>
                         </TableRow>
                       ))}
+                      {isExpanded && !isCash && (
+                        <TableRow className="bg-muted/10 border-t border-border/50">
+                          <TableCell colSpan={12} className="p-0">
+                            <PositionDetailPanel
+                              position={p}
+                              onUpdate={(updates) => {
+                                setPositions((prev) =>
+                                  prev.map((pos) => (pos.id === p.id ? { ...pos, ...updates } : pos))
+                                );
+                              }}
+                              onDelete={() => {
+                                setPositions((prev) => prev.filter((pos) => pos.id !== p.id));
+                                setExpandedId(null);
+                                toast({ title: `${p.symbol} removed from portfolio` });
+                              }}
+                              onCategoryUpdate={(cat, tier) => handleCategoryUpdate(p.id, cat, tier)}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      )}
                     </Fragment>
                   );
                 })}
