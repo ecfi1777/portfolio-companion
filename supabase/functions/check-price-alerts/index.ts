@@ -18,22 +18,6 @@ Deno.serve(async (req) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    // Check if we're in market hours (9:30 AM - 4:00 PM ET, Mon-Fri)
-    const now = new Date();
-    const et = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
-    const day = et.getDay();
-    const hours = et.getHours();
-    const minutes = et.getMinutes();
-    const marketMinutes = hours * 60 + minutes;
-
-    if (day === 0 || day === 6 || marketMinutes < 570 || marketMinutes > 960) {
-      // Outside market hours (570 = 9:30, 960 = 16:00)
-      return new Response(
-        JSON.stringify({ message: "Outside market hours, skipping" }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
     // Fetch all active alerts
     const { data: alerts, error: alertsErr } = await supabase
       .from("price_alerts")
