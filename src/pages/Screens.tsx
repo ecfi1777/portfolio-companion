@@ -256,8 +256,8 @@ export default function Screens() {
                         <TableHead>Screen</TableHead>
                         <TableHead className="text-right">Total Symbols</TableHead>
                         <TableHead className="text-right">Watchlist Matches</TableHead>
-                        <TableHead className="w-10" />
                         <TableHead>Auto Tag</TableHead>
+                        <TableHead className="w-10" />
                       </TableRow>
                     </TableHeader>
                     <TableBody>
