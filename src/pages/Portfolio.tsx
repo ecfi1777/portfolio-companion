@@ -10,7 +10,7 @@ import { DollarSign, TrendingUp, Hash, ChevronRight, Upload, ArrowUpDown, Tag, B
 import { UpdatePortfolioModal } from "@/components/UpdatePortfolioModal";
 import { CategorySelector } from "@/components/CategorySelector";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { usePortfolioSettings, type PortfolioSettings } from "@/hooks/use-portfolio-settings";
+import { usePortfolioSettings, type PortfolioSettings, getCategoryTargets, getTierTarget } from "@/hooks/use-portfolio-settings";
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { format } from "date-fns";
@@ -21,7 +21,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 type Position = Tables<"positions">;
 type PortfolioSummary = Tables<"portfolio_summary">;
 type Category = Database["public"]["Enums"]["position_category"] | null;
-type Tier = Database["public"]["Enums"]["position_tier"] | null;
+type Tier = string | null;
 
 interface AccountBreakdown {
   account: string;
@@ -59,9 +59,7 @@ const CATEGORY_COLORS: Record<string, { bg: string; text: string; bar: string }>
 const TIER_ORDER: Record<string, number> = { C1: 0, C2: 1, C3: 2, TT: 3, CON: 4 };
 
 function getTierGoal(tier: Tier, settings: PortfolioSettings): number | null {
-  if (!tier) return null;
-  if (tier === "CON") return settings.tier_goals.CON_MIN;
-  return settings.tier_goals[tier] ?? null;
+  return getTierTarget(tier, settings);
 }
 
 function getCapitalToGoal(
@@ -74,10 +72,6 @@ function getCapitalToGoal(
   if (!tier) return null;
   const goal = getTierGoal(tier, settings);
   if (goal == null) return null;
-
-  if (tier === "CON" && weight > settings.tier_goals.CON_MAX) {
-    return { label: `Above ${settings.tier_goals.CON_MAX}% cap`, type: "above_cap" };
-  }
 
   const goalValue = (goal / 100) * grandTotal;
   const diff = goalValue - currentValue;
@@ -258,7 +252,7 @@ export default function Portfolio() {
       name,
       value,
       pct: totalEquity > 0 ? (value / totalEquity) * 100 : 0,
-      target: name !== "Unassigned" ? (settings.category_targets as Record<string, number>)[name] ?? 0 : 0,
+      target: name !== "Unassigned" ? (getCategoryTargets(settings)[name] ?? 0) : 0,
     }));
   }, [stockPositions, totalEquity, settings]);
 
