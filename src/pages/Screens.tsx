@@ -252,11 +252,11 @@ export default function Screens() {
                     <TableHeader>
                       <TableRow>
                         <TableHead className="w-8" />
-                        <TableHead>Date</TableHead>
-                        <TableHead>Screen</TableHead>
-                        <TableHead className="text-right">Total Symbols</TableHead>
-                        <TableHead className="text-right">Watchlist Matches</TableHead>
-                        <TableHead>Auto Tag</TableHead>
+                        <TableHead className="whitespace-nowrap">Date</TableHead>
+                        <TableHead className="whitespace-nowrap">Screen</TableHead>
+                        <TableHead className="text-right whitespace-nowrap">Total Symbols</TableHead>
+                        <TableHead className="text-right whitespace-nowrap">Watchlist Matches</TableHead>
+                        <TableHead className="whitespace-nowrap">Auto Tag</TableHead>
                         <TableHead className="w-10" />
                       </TableRow>
                     </TableHeader>
@@ -277,16 +277,16 @@ export default function Screens() {
                                 <TableCell className="w-8">
                                   {isRunExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                                 </TableCell>
-                                <TableCell className="text-sm">{new Date(run.run_date).toLocaleDateString()}</TableCell>
-                                <TableCell className="text-sm font-medium">{run.screen?.name ?? "—"}</TableCell>
+                                <TableCell className="text-sm whitespace-nowrap">{new Date(run.run_date).toLocaleDateString()}</TableCell>
+                                <TableCell className="text-sm font-medium whitespace-nowrap">{run.screen?.name ?? "—"}</TableCell>
                                 <TableCell className="text-right text-sm">{run.total_symbols}</TableCell>
                                 <TableCell className="text-right text-sm">{run.match_count}</TableCell>
-                                <TableCell>
+                                <TableCell className="whitespace-nowrap">
                                   {run.auto_tag_code && (
                                     <Badge variant="secondary" className="text-xs">{run.auto_tag_code}</Badge>
                                   )}
                                 </TableCell>
-                                <TableCell className="text-right">
+                                <TableCell className="w-10 text-right">
                                   <button
                                     className="text-muted-foreground hover:text-destructive transition-colors"
                                     onClick={(e) => {
@@ -446,10 +446,10 @@ export default function Screens() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Symbol</TableHead>
-                          <TableHead>Signal Count</TableHead>
-                          <TableHead>Screens</TableHead>
-                          <TableHead className="w-24">Watchlist</TableHead>
+                          <TableHead className="whitespace-nowrap">Symbol</TableHead>
+                          <TableHead className="text-right whitespace-nowrap">Signal Count</TableHead>
+                          <TableHead className="whitespace-nowrap">Screens</TableHead>
+                          <TableHead className="w-20 whitespace-nowrap">Watchlist</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -458,9 +458,9 @@ export default function Screens() {
                           return (
                             <TableRow key={symbol}>
                               <TableCell className="font-medium text-sm">{symbol}</TableCell>
-                              <TableCell className="text-sm">{screenIndices.length}</TableCell>
+                              <TableCell className="text-right text-sm">{screenIndices.length}</TableCell>
                               <TableCell>
-                                <div className="flex items-center gap-1.5">
+                                <div className="flex items-center gap-1.5 flex-nowrap">
                                   {screenIndices.map((idx) => (
                                     <span
                                       key={idx}

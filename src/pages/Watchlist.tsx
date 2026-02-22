@@ -451,13 +451,13 @@ export default function Watchlist() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <SortHeader label="Symbol" sortKey="symbol" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} />
-                  <TableHead>Company</TableHead>
-                  <SortHeader label="Price" sortKey="price" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="text-right" />
-                  <SortHeader label="Day Chg %" sortKey="dayChg" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="text-right" />
-                  <SortHeader label="Since Added %" sortKey="sinceAdded" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="text-right" />
-                  <SortHeader label="Mkt Cap" sortKey="marketCap" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} />
-                  <TableHead>Tags</TableHead>
+                  <SortHeader label="Symbol" sortKey="symbol" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="w-24 whitespace-nowrap" />
+                  <TableHead className="min-w-[140px]">Company</TableHead>
+                  <SortHeader label="Price" sortKey="price" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="text-right whitespace-nowrap w-28" />
+                  <SortHeader label="Day Chg %" sortKey="dayChg" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="text-right whitespace-nowrap w-28" />
+                  <SortHeader label="Since Added %" sortKey="sinceAdded" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="text-right whitespace-nowrap w-32" />
+                  <SortHeader label="Mkt Cap" sortKey="marketCap" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="whitespace-nowrap w-24" />
+                  <TableHead className="min-w-[100px]">Tags</TableHead>
                   <TableHead className="w-10"></TableHead>
                 </TableRow>
               </TableHeader>
@@ -478,13 +478,13 @@ export default function Watchlist() {
                         className="cursor-pointer"
                         onClick={() => setExpandedId(isExpanded ? null : entry.id)}
                       >
-                        <TableCell className="font-medium">{entry.symbol}</TableCell>
-                        <TableCell className="text-muted-foreground">{entry.company_name ?? "—"}</TableCell>
-                        <TableCell className="text-right">{fmtPrice(entry.current_price)}</TableCell>
-                        <TableCell className={`text-right ${pctColor(dayChg)}`}>
+                        <TableCell className="font-medium whitespace-nowrap">{entry.symbol}</TableCell>
+                        <TableCell className="text-muted-foreground truncate max-w-[200px]">{entry.company_name ?? "—"}</TableCell>
+                        <TableCell className="text-right tabular-nums whitespace-nowrap">{fmtPrice(entry.current_price)}</TableCell>
+                        <TableCell className={`text-right tabular-nums whitespace-nowrap ${pctColor(dayChg)}`}>
                           {dayChg != null ? fmtPct(dayChg) : "—"}
                         </TableCell>
-                        <TableCell className={`text-right ${pctColor(sinceAdded)}`}>
+                        <TableCell className={`text-right tabular-nums whitespace-nowrap ${pctColor(sinceAdded)}`}>
                           {sinceAdded != null ? fmtPct(sinceAdded) : "—"}
                         </TableCell>
                         <TableCell>
@@ -495,7 +495,7 @@ export default function Watchlist() {
                           ) : "—"}
                         </TableCell>
                         <TableCell>
-                          <div className="flex flex-wrap gap-1">
+                          <div className="flex flex-wrap gap-1 max-w-[180px]">
                             {entryTags.map((tag) => (
                               <span
                                 key={tag.id}
