@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,7 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   tags: Tag[];
   fmpApiKey?: string;
+  initialSymbol?: string;
   onSave: (data: {
     symbol: string;
     company_name?: string;
@@ -27,7 +28,7 @@ interface Props {
   }) => Promise<void>;
 }
 
-export function AddToWatchlistModal({ open, onOpenChange, tags, fmpApiKey, onSave }: Props) {
+export function AddToWatchlistModal({ open, onOpenChange, tags, fmpApiKey, initialSymbol, onSave }: Props) {
   const [symbol, setSymbol] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [price, setPrice] = useState("");
@@ -39,6 +40,39 @@ export function AddToWatchlistModal({ open, onOpenChange, tags, fmpApiKey, onSav
   const [industry, setIndustry] = useState("");
   const [sector, setSector] = useState("");
   const [marketCap, setMarketCap] = useState<number | null>(null);
+
+  // Pre-fill symbol and trigger lookup when modal opens with initialSymbol
+  useEffect(() => {
+    if (open && initialSymbol) {
+      const sym = initialSymbol.trim().toUpperCase();
+      setSymbol(sym);
+      if (fmpApiKey && sym) {
+        setLooking(true);
+        lookupSymbol(sym, fmpApiKey).then((data) => {
+          setLooking(false);
+          if (data) {
+            setPreview(data);
+            setCompanyName(data.companyName);
+            setPrice(data.price.toString());
+            setIndustry(data.industry);
+            setSector(data.sector);
+            setMarketCap(data.mktCap);
+          }
+        });
+      }
+    }
+    if (!open) {
+      setSymbol("");
+      setCompanyName("");
+      setPrice("");
+      setNotes("");
+      setSelectedTags([]);
+      setPreview(null);
+      setIndustry("");
+      setSector("");
+      setMarketCap(null);
+    }
+  }, [open, initialSymbol, fmpApiKey]);
 
   const activeTags = tags.filter((t) => t.is_active);
 
@@ -78,15 +112,6 @@ export function AddToWatchlistModal({ open, onOpenChange, tags, fmpApiKey, onSav
       market_cap: marketCap ?? undefined,
     });
     setSaving(false);
-    setSymbol("");
-    setCompanyName("");
-    setPrice("");
-    setNotes("");
-    setSelectedTags([]);
-    setPreview(null);
-    setIndustry("");
-    setSector("");
-    setMarketCap(null);
     onOpenChange(false);
   };
 
