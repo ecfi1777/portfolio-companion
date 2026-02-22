@@ -18,6 +18,8 @@ export interface PriceAlert {
   acknowledged_at: string | null;
   notification_sent: boolean;
   created_at: string;
+  last_notified_at: string | null;
+  notify_time: string | null;
 }
 
 export function useAlerts() {
@@ -46,6 +48,7 @@ export function useAlerts() {
       alert_type: AlertType;
       target_value: number;
       reference_price?: number;
+      notify_time?: string;
     }) => {
       if (!user) return;
       const { error } = await supabase.from("price_alerts").insert({
@@ -55,6 +58,7 @@ export function useAlerts() {
         alert_type: data.alert_type,
         target_value: data.target_value,
         reference_price: data.reference_price ?? null,
+        notify_time: data.notify_time ?? null,
       } as any);
 
       if (error) {

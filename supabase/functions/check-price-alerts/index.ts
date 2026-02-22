@@ -18,6 +18,10 @@ Deno.serve(async (req) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceKey);
 
+    // Current time in ET for notify_time window check
+    const nowET = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
+    const nowMinutes = nowET.getHours() * 60 + nowET.getMinutes();
+
     // Fetch all active alerts
     const { data: alerts, error: alertsErr } = await supabase
       .from("price_alerts")
@@ -59,9 +63,12 @@ Deno.serve(async (req) => {
       const fmpApiKey = settings?.fmp_api_key;
       if (!fmpApiKey) continue;
 
+      // Default notify_time from settings (format "HH:MM")
+      const defaultNotifyTime = settings?.default_notify_time ?? "09:30";
+
       const symbols = [...new Set(userAlerts.map((a: any) => a.symbol))];
 
-      // Fetch prices via /stable/profile (quote-short endpoints are restricted on this plan)
+      // Fetch prices via /stable/profile
       const quotes = new Map<string, number>();
       for (const sym of symbols) {
         try {
@@ -90,6 +97,27 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        // Skip if already notified within last 24 hours
+        if (alert.last_notified_at) {
+          const lastNotified = new Date(alert.last_notified_at).getTime();
+          const hoursSince = (Date.now() - lastNotified) / (1000 * 60 * 60);
+          if (hoursSince < 24) {
+            console.log(`[ALERT] ${alert.symbol}: Skipping - notified ${hoursSince.toFixed(1)}h ago`);
+            continue;
+          }
+        }
+
+        // Check notify_time window (±10 minutes)
+        const alertNotifyTime = alert.notify_time ?? defaultNotifyTime;
+        const [ntH, ntM] = (alertNotifyTime as string).split(":").map(Number);
+        const notifyMinutes = ntH * 60 + ntM;
+        const timeDiff = Math.abs(nowMinutes - notifyMinutes);
+        const withinWindow = timeDiff <= 10 || timeDiff >= (24 * 60 - 10); // handle midnight wrap
+        if (!withinWindow) {
+          console.log(`[ALERT] ${alert.symbol}: Skipping - outside notify window (now=${nowET.toTimeString().slice(0,5)} ET, notify=${alertNotifyTime})`);
+          continue;
+        }
+
         let triggered = false;
         switch (alert.alert_type) {
           case "PRICE_ABOVE":
@@ -115,10 +143,10 @@ Deno.serve(async (req) => {
           totalTriggered++;
           const nowIso = new Date().toISOString();
 
-          // Deactivate alert
+          // Record trigger time and last_notified_at — but do NOT deactivate
           await supabase
             .from("price_alerts")
-            .update({ is_active: false, triggered_at: nowIso })
+            .update({ triggered_at: nowIso, last_notified_at: nowIso })
             .eq("id", alert.id);
 
           // Try to send email
@@ -127,7 +155,6 @@ Deno.serve(async (req) => {
 
           if (resendKey && notificationEmail) {
             try {
-              // Get watchlist entry for additional context
               const { data: entry } = await supabase
                 .from("watchlist_entries")
                 .select("company_name, price_when_added, current_price")
@@ -157,7 +184,7 @@ Deno.serve(async (req) => {
                     ${changeSinceAdded}
                     <p style="margin: 4px 0; color: #666; font-size: 14px;">Triggered at ${new Date().toLocaleString("en-US", { timeZone: "America/New_York" })} ET</p>
                   </div>
-                  <p style="color: #666; font-size: 14px;">This alert has been deactivated. Set a new alert from your watchlist.</p>
+                  <p style="color: #666; font-size: 14px;">This alert will fire again tomorrow if the condition is still met. Deactivate or delete the alert from your watchlist to stop notifications.</p>
                 </div>
               `;
 
