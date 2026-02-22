@@ -9,7 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { RotateCcw, Save, Eye, EyeOff, Key, Mail, Check, Plus, Trash2 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-type SectionKey = "tiers" | "count" | "api" | "notifications";
+type SectionKey = "tiers" | "api" | "notifications";
 
 export default function Settings() {
   const { settings, updateSettings, loading } = usePortfolioSettings();
@@ -66,9 +66,6 @@ export default function Settings() {
         }
         next = { ...settings, categories: draft.categories };
         break;
-      case "count":
-        next = { ...settings, position_count_target: draft.position_count_target };
-        break;
       case "api":
         next = { ...settings, fmp_api_key: draft.fmp_api_key };
         break;
@@ -91,9 +88,6 @@ export default function Settings() {
       case "tiers":
         patch = { categories: DEFAULT_SETTINGS.categories };
         break;
-      case "count":
-        patch = { position_count_target: DEFAULT_SETTINGS.position_count_target };
-        break;
       case "api":
         patch = { fmp_api_key: undefined };
         break;
@@ -107,8 +101,6 @@ export default function Settings() {
     toast({ title: "Section reset to defaults" });
   };
 
-  const setCount = (key: "min" | "max", v: number) =>
-    setDraft((d) => ({ ...d, position_count_target: { ...d.position_count_target, [key]: v } }));
 
   // Category/tier helpers
   const updateCategory = (catIdx: number, updates: Partial<CategoryConfig>) => {
@@ -320,38 +312,6 @@ export default function Settings() {
         </CardContent>
       </Card>
 
-      {/* Position Count Target */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-base">Position Count Target</CardTitle>
-              <CardDescription>Target range for total positions in the portfolio.</CardDescription>
-            </div>
-            <SectionActions section="count" />
-          </div>
-        </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-4">
-          <div className="space-y-1">
-            <Label>Min</Label>
-            <Input
-              type="number"
-              min="1"
-              value={draft.position_count_target.min}
-              onChange={(e) => setCount("min", Number(e.target.value))}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label>Max</Label>
-            <Input
-              type="number"
-              min="1"
-              value={draft.position_count_target.max}
-              onChange={(e) => setCount("max", Number(e.target.value))}
-            />
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Price Data API */}
       <Card>
