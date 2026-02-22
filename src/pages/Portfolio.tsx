@@ -10,7 +10,7 @@ import { DollarSign, TrendingUp, Hash, ChevronRight, Upload, ArrowUpDown, Tag, B
 import { UpdatePortfolioModal } from "@/components/UpdatePortfolioModal";
 import { CategorySelector } from "@/components/CategorySelector";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { usePortfolioSettings, type PortfolioSettings, getCategoryTargets, getTierTarget } from "@/hooks/use-portfolio-settings";
+import { usePortfolioSettings, type PortfolioSettings, getCategoryTargets, getTierTarget, getCategoryForTier, buildTierOrder } from "@/hooks/use-portfolio-settings";
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { format } from "date-fns";
@@ -49,14 +49,23 @@ function getAccountBreakdowns(account: unknown): AccountBreakdown[] {
 type SortKey = "symbol" | "current_value" | "gainLossDollar" | "gainLossPct" | "weight" | "category";
 type SortDir = "asc" | "desc";
 
-const CATEGORY_COLORS: Record<string, { bg: string; text: string; bar: string }> = {
-  CORE: { bg: "bg-blue-100 dark:bg-blue-900/30", text: "text-blue-700 dark:text-blue-300", bar: "bg-blue-500" },
-  TITAN: { bg: "bg-emerald-100 dark:bg-emerald-900/30", text: "text-emerald-700 dark:text-emerald-300", bar: "bg-emerald-500" },
-  CONSENSUS: { bg: "bg-violet-100 dark:bg-violet-900/30", text: "text-violet-700 dark:text-violet-300", bar: "bg-violet-500" },
-  Unassigned: { bg: "bg-muted", text: "text-muted-foreground", bar: "bg-muted-foreground/30" },
-};
+const COLOR_PALETTE = [
+  { bg: "bg-blue-100 dark:bg-blue-900/30", text: "text-blue-700 dark:text-blue-300", bar: "bg-blue-500" },
+  { bg: "bg-emerald-100 dark:bg-emerald-900/30", text: "text-emerald-700 dark:text-emerald-300", bar: "bg-emerald-500" },
+  { bg: "bg-violet-100 dark:bg-violet-900/30", text: "text-violet-700 dark:text-violet-300", bar: "bg-violet-500" },
+  { bg: "bg-amber-100 dark:bg-amber-900/30", text: "text-amber-700 dark:text-amber-300", bar: "bg-amber-500" },
+  { bg: "bg-rose-100 dark:bg-rose-900/30", text: "text-rose-700 dark:text-rose-300", bar: "bg-rose-500" },
+];
+const UNASSIGNED_COLORS = { bg: "bg-muted", text: "text-muted-foreground", bar: "bg-muted-foreground/30" };
 
-const TIER_ORDER: Record<string, number> = { C1: 0, C2: 1, C3: 2, TT: 3, CON: 4 };
+function getCategoryColors(settings: PortfolioSettings): Record<string, { bg: string; text: string; bar: string }> {
+  const map: Record<string, { bg: string; text: string; bar: string }> = {};
+  settings.categories.forEach((cat, i) => {
+    map[cat.key] = COLOR_PALETTE[i % COLOR_PALETTE.length];
+  });
+  map["Unassigned"] = UNASSIGNED_COLORS;
+  return map;
+}
 
 function getTierGoal(tier: Tier, settings: PortfolioSettings): number | null {
   return getTierTarget(tier, settings);
@@ -241,19 +250,29 @@ export default function Portfolio() {
   const totalGainLossPct = totalCostBasis > 0 ? (totalGainLoss / totalCostBasis) * 100 : 0;
   const assignedCount = stockPositions.filter((p) => p.category != null).length;
 
-  // Category breakdown
+  const CATEGORY_COLORS = useMemo(() => getCategoryColors(settings), [settings]);
+  const tierOrder = useMemo(() => buildTierOrder(settings), [settings]);
+
+  // Category breakdown — driven by settings
   const categoryBreakdown = useMemo(() => {
-    const groups: Record<string, number> = { CORE: 0, TITAN: 0, CONSENSUS: 0, Unassigned: 0 };
+    const groups: Record<string, number> = {};
+    for (const cat of settings.categories) groups[cat.key] = 0;
+    groups["Unassigned"] = 0;
     for (const p of stockPositions) {
       const key = p.category ?? "Unassigned";
       groups[key] = (groups[key] ?? 0) + (p.current_value ?? 0);
     }
-    return Object.entries(groups).map(([name, value]) => ({
-      name,
-      value,
-      pct: totalEquity > 0 ? (value / totalEquity) * 100 : 0,
-      target: name !== "Unassigned" ? (getCategoryTargets(settings)[name] ?? 0) : 0,
-    }));
+    const catTargets = getCategoryTargets(settings);
+    return Object.entries(groups).map(([key, value]) => {
+      const catConfig = settings.categories.find((c) => c.key === key);
+      return {
+        name: catConfig?.display_name ?? key,
+        key,
+        value,
+        pct: totalEquity > 0 ? (value / totalEquity) * 100 : 0,
+        target: key !== "Unassigned" ? (catTargets[key] ?? 0) : 0,
+      };
+    });
   }, [stockPositions, totalEquity, settings]);
 
   // Deploy capital data
@@ -277,7 +296,7 @@ export default function Portfolio() {
         };
       })
       .filter(Boolean)
-      .sort((a, b) => (TIER_ORDER[a!.tier] ?? 99) - (TIER_ORDER[b!.tier] ?? 99)) as {
+      .sort((a, b) => (tierOrder[a!.tier] ?? 99) - (tierOrder[b!.tier] ?? 99)) as {
       symbol: string; tier: string; weight: number; goal: number; toGoal: number;
     }[];
   }, [stockPositions, cashBalance, grandTotal, settings]);
@@ -481,8 +500,8 @@ export default function Portfolio() {
             <div className="flex h-3 w-full rounded-full overflow-hidden mb-4">
               {categoryBreakdown.filter((c) => c.value > 0).map((c) => (
                 <div
-                  key={c.name}
-                  className={`${CATEGORY_COLORS[c.name]?.bar ?? "bg-muted"} transition-all`}
+                  key={c.key}
+                  className={`${CATEGORY_COLORS[c.key]?.bar ?? "bg-muted"} transition-all`}
                   style={{ width: `${c.pct}%` }}
                 />
               ))}
@@ -490,8 +509,8 @@ export default function Portfolio() {
             {/* Legend with targets */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {categoryBreakdown.map((c) => (
-                <div key={c.name} className={`rounded-md px-3 py-2 ${CATEGORY_COLORS[c.name]?.bg ?? "bg-muted"}`}>
-                  <p className={`text-xs font-medium ${CATEGORY_COLORS[c.name]?.text ?? "text-muted-foreground"}`}>{c.name}</p>
+                <div key={c.key} className={`rounded-md px-3 py-2 ${CATEGORY_COLORS[c.key]?.bg ?? "bg-muted"}`}>
+                  <p className={`text-xs font-medium ${CATEGORY_COLORS[c.key]?.text ?? "text-muted-foreground"}`}>{c.name}</p>
                   <p className="text-sm font-bold">{fmt(c.value)}</p>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">{fmtPct(c.pct)}</span>
@@ -505,7 +524,7 @@ export default function Portfolio() {
                   {c.target > 0 && (
                     <div className="mt-1.5 h-1 w-full rounded-full bg-muted-foreground/10 overflow-hidden">
                       <div
-                        className={`h-full rounded-full ${CATEGORY_COLORS[c.name]?.bar ?? "bg-muted"} opacity-60 transition-all`}
+                        className={`h-full rounded-full ${CATEGORY_COLORS[c.key]?.bar ?? "bg-muted"} opacity-60 transition-all`}
                         style={{ width: `${Math.min((c.pct / c.target) * 100, 100)}%` }}
                       />
                     </div>
@@ -705,13 +724,15 @@ export default function Portfolio() {
                       <TableRow key={item.symbol}>
                         <TableCell className="font-medium">{item.symbol}</TableCell>
                         <TableCell>
-                          <span className={`text-xs px-1.5 py-0.5 rounded ${
-                            CATEGORY_COLORS[item.tier.startsWith("C") ? "CORE" : item.tier === "TT" ? "TITAN" : "CONSENSUS"]?.bg ?? ""
-                          } ${
-                            CATEGORY_COLORS[item.tier.startsWith("C") ? "CORE" : item.tier === "TT" ? "TITAN" : "CONSENSUS"]?.text ?? ""
-                          }`}>
-                            {item.tier}
-                          </span>
+                          {(() => {
+                            const cat = getCategoryForTier(item.tier, settings);
+                            const colors = cat ? CATEGORY_COLORS[cat.key] : null;
+                            return (
+                              <span className={`text-xs px-1.5 py-0.5 rounded ${colors?.bg ?? ""} ${colors?.text ?? ""}`}>
+                                {item.tier}
+                              </span>
+                            );
+                          })()}
                         </TableCell>
                         <TableCell className="text-right text-muted-foreground">{fmtPct(item.weight)}</TableCell>
                         <TableCell className="text-right text-muted-foreground">{fmtPct(item.goal)}</TableCell>
