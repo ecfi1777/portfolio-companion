@@ -38,15 +38,15 @@ export default function Screens() {
   const [addPrefill, setAddPrefill] = useState<string | undefined>(undefined);
 
   // Screen history state
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(true);
   const [historyFilter, setHistoryFilter] = useState("all");
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
   const [deleteScreenConfirm, setDeleteScreenConfirm] = useState<{ id: string; name: string } | null>(null);
 
   // Overlap sections
-  const [screenOverlapOpen, setScreenOverlapOpen] = useState(false);
-  const [portfolioOverlapOpen, setPortfolioOverlapOpen] = useState(false);
-  const [watchlistOverlapOpen, setWatchlistOverlapOpen] = useState(false);
+  const [screenOverlapOpen, setScreenOverlapOpen] = useState(true);
+  const [portfolioOverlapOpen, setPortfolioOverlapOpen] = useState(true);
+  const [watchlistOverlapOpen, setWatchlistOverlapOpen] = useState(true);
 
   // Portfolio positions
   const [positions, setPositions] = useState<Position[]>([]);
