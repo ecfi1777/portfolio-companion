@@ -1,6 +1,6 @@
 // FMP (Financial Modeling Prep) API helper with in-memory caching
 
-const FMP_BASE = "https://financialmodelingprep.com/api/v3";
+const FMP_BASE = "https://financialmodelingprep.com/stable";
 
 // Cache entries with TTL
 interface CacheEntry<T> {
@@ -44,7 +44,7 @@ export async function lookupSymbol(symbol: string, apiKey: string): Promise<Prof
   if (cached) return cached;
 
   try {
-    const res = await fetch(`${FMP_BASE}/profile/${encodeURIComponent(symbol)}?apikey=${apiKey}`);
+    const res = await fetch(`${FMP_BASE}/profile?symbol=${encodeURIComponent(symbol)}&apikey=${apiKey}`);
     if (!res.ok) return null;
     const data = await res.json();
     if (!Array.isArray(data) || data.length === 0) return null;
@@ -89,7 +89,7 @@ export async function fetchQuotes(symbols: string[], apiKey: string): Promise<Qu
   for (let i = 0; i < misses.length; i += BATCH_SIZE) {
     const batch = misses.slice(i, i + BATCH_SIZE);
     try {
-      const res = await fetch(`${FMP_BASE}/quote/${batch.join(",")}?apikey=${apiKey}`);
+      const res = await fetch(`${FMP_BASE}/batch-quote-short?symbols=${batch.join(",")}&apikey=${apiKey}`);
       if (!res.ok) continue;
       const data = await res.json();
       if (!Array.isArray(data)) continue;
@@ -99,7 +99,7 @@ export async function fetchQuotes(symbols: string[], apiKey: string): Promise<Qu
           symbol: q.symbol,
           price: q.price ?? 0,
           previousClose: q.previousClose ?? 0,
-          changesPercentage: q.changesPercentage ?? 0,
+          changesPercentage: q.changesPercentage ?? q.changePercentage ?? 0,
         };
         priceCache.set(q.symbol, { data: quote, expiry: Date.now() + PRICE_TTL });
         results.push(quote);
