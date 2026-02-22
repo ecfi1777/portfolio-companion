@@ -18,7 +18,6 @@ export interface CategoryConfig {
 
 export interface PortfolioSettings {
   categories: CategoryConfig[];
-  position_count_target: { min: number; max: number };
   fmp_api_key?: string;
   notification_email?: string;
   resend_api_key?: string;
@@ -102,7 +101,6 @@ export const DEFAULT_SETTINGS: PortfolioSettings = {
       tiers: [{ key: "CON", name: "CON", allocation_pct: 10.5, max_positions: 5 }],
     },
   ],
-  position_count_target: { min: 25, max: 35 },
 };
 
 /** Detect old format and convert to new categories array */
@@ -132,7 +130,6 @@ function migrateOldSettings(raw: Record<string, unknown>): PortfolioSettings {
       }));
       return {
         categories: migrated,
-        position_count_target: (raw.position_count_target as { min: number; max: number }) ?? DEFAULT_SETTINGS.position_count_target,
         fmp_api_key: raw.fmp_api_key as string | undefined,
         notification_email: raw.notification_email as string | undefined,
         resend_api_key: raw.resend_api_key as string | undefined,
@@ -169,7 +166,6 @@ function migrateOldSettings(raw: Record<string, unknown>): PortfolioSettings {
 
   return {
     categories,
-    position_count_target: (raw.position_count_target as { min: number; max: number }) ?? DEFAULT_SETTINGS.position_count_target,
     fmp_api_key: raw.fmp_api_key as string | undefined,
     notification_email: raw.notification_email as string | undefined,
     resend_api_key: raw.resend_api_key as string | undefined,
