@@ -53,6 +53,27 @@ export function getTierTarget(tierKey: string | null, settings: PortfolioSetting
   return null;
 }
 
+/** Find the category a tier belongs to */
+export function getCategoryForTier(tierKey: string | null, settings: PortfolioSettings): CategoryConfig | null {
+  if (!tierKey) return null;
+  for (const cat of settings.categories) {
+    if (cat.tiers.some((t) => t.key === tierKey)) return cat;
+  }
+  return null;
+}
+
+/** Build a tier ordering map from settings (first category's tiers first, etc.) */
+export function buildTierOrder(settings: PortfolioSettings): Record<string, number> {
+  const order: Record<string, number> = {};
+  let idx = 0;
+  for (const cat of settings.categories) {
+    for (const t of cat.tiers) {
+      order[t.key] = idx++;
+    }
+  }
+  return order;
+}
+
 export const DEFAULT_SETTINGS: PortfolioSettings = {
   categories: [
     {
