@@ -1,11 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { usePortfolioSettings, DEFAULT_SETTINGS, type PortfolioSettings } from "@/hooks/use-portfolio-settings";
 import { useToast } from "@/hooks/use-toast";
-import { RotateCcw, Save, Eye, EyeOff, Key, Mail } from "lucide-react";
+import { RotateCcw, Save, Eye, EyeOff, Key, Mail, Check } from "lucide-react";
+
+type SectionKey = "category" | "count" | "tier" | "api" | "notifications";
 
 export default function Settings() {
   const { settings, updateSettings, loading } = usePortfolioSettings();
@@ -13,10 +15,16 @@ export default function Settings() {
   const [draft, setDraft] = useState<PortfolioSettings>(settings);
   const [showApiKey, setShowApiKey] = useState(false);
   const [showResendKey, setShowResendKey] = useState(false);
+  const [savedSection, setSavedSection] = useState<SectionKey | null>(null);
 
   useEffect(() => {
     setDraft(settings);
   }, [settings]);
+
+  const showSaved = useCallback((section: SectionKey) => {
+    setSavedSection(section);
+    setTimeout(() => setSavedSection(null), 2000);
+  }, []);
 
   if (loading) {
     return (
@@ -32,19 +40,62 @@ export default function Settings() {
     draft.category_targets.CONSENSUS;
   const catValid = Math.abs(catSum - 100) < 0.01;
 
-  const handleSave = async () => {
-    if (!catValid) {
-      toast({ title: "Category targets must sum to 100%", variant: "destructive" });
-      return;
+  const saveSection = async (section: SectionKey) => {
+    // Merge only the relevant section from draft into current settings
+    let next: PortfolioSettings;
+    switch (section) {
+      case "category":
+        if (!catValid) {
+          toast({ title: "Category targets must sum to 100%", variant: "destructive" });
+          return;
+        }
+        next = { ...settings, category_targets: draft.category_targets };
+        break;
+      case "count":
+        next = { ...settings, position_count_target: draft.position_count_target };
+        break;
+      case "tier":
+        next = { ...settings, tier_goals: draft.tier_goals };
+        break;
+      case "api":
+        next = { ...settings, fmp_api_key: draft.fmp_api_key };
+        break;
+      case "notifications":
+        next = {
+          ...settings,
+          notification_email: draft.notification_email,
+          default_notify_time: draft.default_notify_time,
+          resend_api_key: draft.resend_api_key,
+        };
+        break;
     }
-    await updateSettings(draft);
-    toast({ title: "Settings saved" });
+    await updateSettings(next);
+    showSaved(section);
   };
 
-  const handleReset = async () => {
-    setDraft(DEFAULT_SETTINGS);
-    await updateSettings(DEFAULT_SETTINGS);
-    toast({ title: "Settings reset to defaults" });
+  const resetSection = async (section: SectionKey) => {
+    let patch: Partial<PortfolioSettings>;
+    switch (section) {
+      case "category":
+        patch = { category_targets: DEFAULT_SETTINGS.category_targets };
+        break;
+      case "count":
+        patch = { position_count_target: DEFAULT_SETTINGS.position_count_target };
+        break;
+      case "tier":
+        patch = { tier_goals: DEFAULT_SETTINGS.tier_goals };
+        break;
+      case "api":
+        patch = { fmp_api_key: undefined };
+        break;
+      case "notifications":
+        patch = { notification_email: undefined, default_notify_time: undefined, resend_api_key: undefined };
+        break;
+    }
+    const next = { ...settings, ...patch };
+    setDraft((d) => ({ ...d, ...patch }));
+    await updateSettings(next);
+    toast({ title: "Section reset to defaults" });
   };
 
   const setCat = (key: keyof PortfolioSettings["category_targets"], v: number) =>
@@ -56,32 +107,49 @@ export default function Settings() {
   const setCount = (key: "min" | "max", v: number) =>
     setDraft((d) => ({ ...d, position_count_target: { ...d.position_count_target, [key]: v } }));
 
+  const SectionActions = ({ section, disabled }: { section: SectionKey; disabled?: boolean }) => (
+    <div className="flex items-center gap-2">
+      {savedSection === section ? (
+        <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
+          <Check className="h-3.5 w-3.5" /> Saved
+        </span>
+      ) : (
+        <>
+          <button
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            onClick={() => resetSection(section)}
+          >
+            <span className="flex items-center gap-1"><RotateCcw className="h-3 w-3" /> Reset</span>
+          </button>
+          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => saveSection(section)} disabled={disabled}>
+            <Save className="h-4 w-4" />
+          </Button>
+        </>
+      )}
+    </div>
+  );
+
   return (
     <div className="p-6 space-y-6 max-w-2xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Settings</h1>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={handleReset}>
-            <RotateCcw className="mr-2 h-4 w-4" /> Reset to Defaults
-          </Button>
-          <Button onClick={handleSave} disabled={!catValid}>
-            <Save className="mr-2 h-4 w-4" /> Save
-          </Button>
-        </div>
-      </div>
+      <h1 className="text-2xl font-bold">Settings</h1>
 
       {/* Category Allocation Targets */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Category Allocation Targets</CardTitle>
-          <CardDescription>
-            Must sum to 100%.{" "}
-            {!catValid && (
-              <span className="text-destructive font-medium">
-                Currently {catSum.toFixed(1)}%
-              </span>
-            )}
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-base">Category Allocation Targets</CardTitle>
+              <CardDescription>
+                Must sum to 100%.{" "}
+                {!catValid && (
+                  <span className="text-destructive font-medium">
+                    Currently {catSum.toFixed(1)}%
+                  </span>
+                )}
+              </CardDescription>
+            </div>
+            <SectionActions section="category" disabled={!catValid} />
+          </div>
         </CardHeader>
         <CardContent className="grid grid-cols-3 gap-4">
           {(["CORE", "TITAN", "CONSENSUS"] as const).map((key) => (
@@ -107,8 +175,13 @@ export default function Settings() {
       {/* Position Count Target */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Position Count Target</CardTitle>
-          <CardDescription>Target range for total positions in the portfolio.</CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-base">Position Count Target</CardTitle>
+              <CardDescription>Target range for total positions in the portfolio.</CardDescription>
+            </div>
+            <SectionActions section="count" />
+          </div>
         </CardHeader>
         <CardContent className="grid grid-cols-2 gap-4">
           <div className="space-y-1">
@@ -135,8 +208,13 @@ export default function Settings() {
       {/* Per-Tier Weight Goals */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Per-Tier Weight Goals</CardTitle>
-          <CardDescription>Target weight for each conviction tier as a percentage of total portfolio.</CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-base">Per-Tier Weight Goals</CardTitle>
+              <CardDescription>Target weight for each conviction tier as a percentage of total portfolio.</CardDescription>
+            </div>
+            <SectionActions section="tier" />
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-3 gap-4">
@@ -207,17 +285,22 @@ export default function Settings() {
       {/* Price Data API */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Key className="h-4 w-4" />
-            Price Data API
-          </CardTitle>
-          <CardDescription>
-            Enter your Financial Modeling Prep (FMP) API key to enable live price lookups and refreshes.
-            Get a free key at{" "}
-            <a href="https://financialmodelingprep.com" target="_blank" rel="noopener noreferrer" className="underline text-primary">
-              financialmodelingprep.com
-            </a>
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Key className="h-4 w-4" />
+                Price Data API
+              </CardTitle>
+              <CardDescription>
+                Enter your Financial Modeling Prep (FMP) API key to enable live price lookups and refreshes.
+                Get a free key at{" "}
+                <a href="https://financialmodelingprep.com" target="_blank" rel="noopener noreferrer" className="underline text-primary">
+                  financialmodelingprep.com
+                </a>
+              </CardDescription>
+            </div>
+            <SectionActions section="api" />
+          </div>
         </CardHeader>
         <CardContent>
           <div className="space-y-1">
@@ -248,16 +331,21 @@ export default function Settings() {
       {/* Notifications */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Mail className="h-4 w-4" />
-            Notifications
-          </CardTitle>
-          <CardDescription>
-            Configure email notifications for price alerts. Requires a Resend API key — get one free at{" "}
-            <a href="https://resend.com" target="_blank" rel="noopener noreferrer" className="underline text-primary">
-              resend.com
-            </a>
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Mail className="h-4 w-4" />
+                Notifications
+              </CardTitle>
+              <CardDescription>
+                Configure email notifications for price alerts. Requires a Resend API key — get one free at{" "}
+                <a href="https://resend.com" target="_blank" rel="noopener noreferrer" className="underline text-primary">
+                  resend.com
+                </a>
+              </CardDescription>
+            </div>
+            <SectionActions section="notifications" />
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-1">
