@@ -170,6 +170,7 @@ export default function Watchlist() {
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<WatchlistEntry | null>(null);
+  const [deleteAlertConfirm, setDeleteAlertConfirm] = useState<string | null>(null);
 
   // Collapsible section states
   const [alertsOpen, setAlertsOpen] = useState(false);
@@ -665,7 +666,7 @@ export default function Watchlist() {
                                             <Badge variant="secondary" className="text-[10px]">Triggered</Badge>
                                           )}
                                         </div>
-                                        <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => deleteAlert(a.id)}>
+                                        <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => setDeleteAlertConfirm(a.id)}>
                                           <X className="h-3 w-3" />
                                         </Button>
                                       </div>
@@ -765,7 +766,7 @@ export default function Watchlist() {
                               {a.reference_price ? `$${a.reference_price}` : "—"}
                             </TableCell>
                             <TableCell>
-                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => deleteAlert(a.id)}>
+                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setDeleteAlertConfirm(a.id)}>
                                 <Trash2 className="h-3 w-3" />
                               </Button>
                             </TableCell>
@@ -837,6 +838,30 @@ export default function Watchlist() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleDeleteConfirm} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
               Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete alert confirmation */}
+      <AlertDialog open={!!deleteAlertConfirm} onOpenChange={(o) => !o && setDeleteAlertConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this alert?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove this price alert. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (deleteAlertConfirm) deleteAlert(deleteAlertConfirm);
+                setDeleteAlertConfirm(null);
+              }}
+            >
+              Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
