@@ -128,6 +128,56 @@ export type Database = {
         }
         Relationships: []
       }
+      price_alerts: {
+        Row: {
+          alert_type: Database["public"]["Enums"]["alert_type"]
+          created_at: string
+          id: string
+          is_active: boolean
+          notification_sent: boolean
+          reference_price: number | null
+          symbol: string
+          target_value: number
+          triggered_at: string | null
+          user_id: string
+          watchlist_entry_id: string
+        }
+        Insert: {
+          alert_type: Database["public"]["Enums"]["alert_type"]
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          notification_sent?: boolean
+          reference_price?: number | null
+          symbol: string
+          target_value: number
+          triggered_at?: string | null
+          user_id: string
+          watchlist_entry_id: string
+        }
+        Update: {
+          alert_type?: Database["public"]["Enums"]["alert_type"]
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          notification_sent?: boolean
+          reference_price?: number | null
+          symbol?: string
+          target_value?: number
+          triggered_at?: string | null
+          user_id?: string
+          watchlist_entry_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "price_alerts_watchlist_entry_id_fkey"
+            columns: ["watchlist_entry_id"]
+            isOneToOne: false
+            referencedRelation: "watchlist_entries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       screen_runs: {
         Row: {
           all_symbols: string[]
@@ -355,6 +405,11 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
+      alert_type:
+        | "PRICE_ABOVE"
+        | "PRICE_BELOW"
+        | "PCT_CHANGE_UP"
+        | "PCT_CHANGE_DOWN"
       position_category: "CORE" | "TITAN" | "CONSENSUS"
       position_tier: "C1" | "C2" | "C3" | "TT" | "CON"
     }
@@ -484,6 +539,12 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      alert_type: [
+        "PRICE_ABOVE",
+        "PRICE_BELOW",
+        "PCT_CHANGE_UP",
+        "PCT_CHANGE_DOWN",
+      ],
       position_category: ["CORE", "TITAN", "CONSENSUS"],
       position_tier: ["C1", "C2", "C3", "TT", "CON"],
     },

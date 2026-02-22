@@ -2,6 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -18,17 +19,20 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Eye, Plus, Settings, Search, Bell, ChevronDown, ChevronUp, ArrowUpDown, Trash2, X, Tag as TagIcon, Upload, FileSearch, RefreshCw, AlertTriangle, Clock,
+  Eye, Plus, Settings, Search, Bell, BellRing, ChevronDown, ChevronUp, ArrowUpDown, Trash2, X, Tag as TagIcon, Upload, FileSearch, RefreshCw, AlertTriangle, Clock,
 } from "lucide-react";
 import { useWatchlist, type WatchlistEntry } from "@/hooks/use-watchlist";
 import { useScreens } from "@/hooks/use-screens";
 import { usePortfolioSettings } from "@/hooks/use-portfolio-settings";
-import { AddToWatchlistModal } from "@/components/AddToWatchlistModal";
+import { useAlerts, type AlertType, type PriceAlert } from "@/hooks/use-alerts";
+import { AddToWatchlistModal, type AddToWatchlistData, type PendingAlertData } from "@/components/AddToWatchlistModal";
 import { ManageTagsModal } from "@/components/ManageTagsModal";
 import { ScreenUploadModal } from "@/components/ScreenUploadModal";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatMarketCap } from "@/lib/market-cap";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 /* ── Formatters ── */
 const fmtPrice = (n: number | null) =>
@@ -157,8 +161,10 @@ export default function Watchlist() {
   } = useWatchlist();
   const { screens, runs, createScreen, createRun, deleteScreen } = useScreens();
   const { settings } = usePortfolioSettings();
+  const { activeAlerts, triggeredAlerts, createAlert, deleteAlert, getAlertsForEntry, refetch: refetchAlerts } = useAlerts();
   const fmpApiKey = settings.fmp_api_key;
   const [refreshing, setRefreshing] = useState(false);
+  const [alertTab, setAlertTab] = useState<string>("watchlist");
 
   const [addOpen, setAddOpen] = useState(false);
   const [addPrefill, setAddPrefill] = useState<string | undefined>(undefined);
@@ -398,7 +404,25 @@ export default function Watchlist() {
         </div>
       </div>
 
-      <AddToWatchlistModal open={addOpen} onOpenChange={setAddOpen} tags={tags} fmpApiKey={fmpApiKey} initialSymbol={addPrefill} onSave={addEntry} />
+      <AddToWatchlistModal
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        tags={tags}
+        fmpApiKey={fmpApiKey}
+        initialSymbol={addPrefill}
+        onSave={async (data, alert) => {
+          const entryId = await addEntry(data);
+          if (entryId && alert) {
+            await createAlert({
+              watchlist_entry_id: entryId,
+              symbol: data.symbol.toUpperCase(),
+              alert_type: alert.alert_type,
+              target_value: alert.target_value,
+              reference_price: alert.reference_price,
+            });
+          }
+        }}
+      />
       <ManageTagsModal open={tagsOpen} onOpenChange={setTagsOpen} tags={tags} onCreate={createTag} onUpdate={updateTag} onDelete={deleteTag} />
       <ScreenUploadModal
         open={screenOpen}
@@ -408,7 +432,7 @@ export default function Watchlist() {
         tags={tags}
         createScreen={createScreen}
         createRun={createRun}
-        addEntry={addEntry}
+        addEntry={async (data) => { await addEntry(data); }}
         refetchWatchlist={refetchWatchlist}
       />
 
@@ -481,6 +505,8 @@ export default function Watchlist() {
                   const isExpanded = expandedId === entry.id;
                   const entryTags = entry.tags ?? [];
                   const availableTags = tags.filter((t) => t.is_active && !entryTags.some((et) => et.id === t.id));
+                  const entryAlerts = getAlertsForEntry(entry.id);
+                  const hasActiveAlert = entryAlerts.some((a) => a.is_active);
 
                   return (
                     <React.Fragment key={entry.id}>
@@ -522,7 +548,11 @@ export default function Watchlist() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Bell className="h-4 w-4 text-muted-foreground/30" />
+                          {hasActiveAlert ? (
+                            <BellRing className="h-4 w-4 text-amber-500" />
+                          ) : (
+                            <Bell className="h-4 w-4 text-muted-foreground/30" />
+                          )}
                         </TableCell>
                       </TableRow>
 
@@ -633,6 +663,40 @@ export default function Watchlist() {
                                     </Popover>
                                   )}
                                 </div>
+                              </div>
+
+                              {/* Alerts */}
+                              <div className="space-y-2">
+                                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Alerts</h4>
+                                {entryAlerts.length > 0 ? (
+                                  <div className="space-y-1.5">
+                                    {entryAlerts.map((a) => (
+                                      <div key={a.id} className="flex items-center justify-between text-sm rounded-md border px-2 py-1.5">
+                                        <div className="flex items-center gap-2">
+                                          {a.is_active ? (
+                                            <BellRing className="h-3.5 w-3.5 text-amber-500" />
+                                          ) : (
+                                            <Bell className="h-3.5 w-3.5 text-muted-foreground/50" />
+                                          )}
+                                          <span className="text-xs">
+                                            {a.alert_type.replace(/_/g, " ")}
+                                            {": "}
+                                            {a.alert_type.startsWith("PCT") ? `${a.target_value}%` : `$${a.target_value}`}
+                                          </span>
+                                          {a.triggered_at && (
+                                            <Badge variant="secondary" className="text-[10px]">Triggered</Badge>
+                                          )}
+                                        </div>
+                                        <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => deleteAlert(a.id)}>
+                                          <X className="h-3 w-3" />
+                                        </Button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p className="text-xs text-muted-foreground">No alerts set</p>
+                                )}
+                                <AlertPopover entryId={entry.id} symbol={entry.symbol} currentPrice={entry.current_price} createAlert={createAlert} />
                               </div>
 
                               {/* Notes + Actions */}
@@ -813,6 +877,105 @@ export default function Watchlist() {
 
       {/* Cross-Screen Overlap Matrix */}
       <ScreenOverlapMatrix runs={runs} screens={screens} entries={entries} onQuickAdd={(sym) => { setAddPrefill(sym); setAddOpen(true); }} />
+
+      {/* Alerts Section */}
+      {(activeAlerts.length > 0 || triggeredAlerts.length > 0) && (
+        <div className="space-y-3">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <BellRing className="h-5 w-5" />
+            Price Alerts
+          </h2>
+          <Tabs value={alertTab} onValueChange={setAlertTab}>
+            <TabsList>
+              <TabsTrigger value="watchlist">Watchlist</TabsTrigger>
+              <TabsTrigger value="active">Active ({activeAlerts.length})</TabsTrigger>
+              <TabsTrigger value="triggered">Triggered ({triggeredAlerts.length})</TabsTrigger>
+            </TabsList>
+            <TabsContent value="active">
+              {activeAlerts.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4">No active alerts.</p>
+              ) : (
+                <Card>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Symbol</TableHead>
+                          <TableHead>Alert Type</TableHead>
+                          <TableHead>Target</TableHead>
+                          <TableHead>Reference</TableHead>
+                          <TableHead className="w-10"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {activeAlerts.map((a) => (
+                          <TableRow key={a.id}>
+                            <TableCell className="font-medium">{a.symbol}</TableCell>
+                            <TableCell className="text-sm">{a.alert_type.replace(/_/g, " ")}</TableCell>
+                            <TableCell className="text-sm">
+                              {a.alert_type.startsWith("PCT") ? `${a.target_value}%` : `$${a.target_value}`}
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {a.reference_price ? `$${a.reference_price}` : "—"}
+                            </TableCell>
+                            <TableCell>
+                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => deleteAlert(a.id)}>
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </Card>
+              )}
+            </TabsContent>
+            <TabsContent value="triggered">
+              {triggeredAlerts.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4">No triggered alerts yet.</p>
+              ) : (
+                <Card>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Symbol</TableHead>
+                          <TableHead>Alert Type</TableHead>
+                          <TableHead>Target</TableHead>
+                          <TableHead>Triggered At</TableHead>
+                          <TableHead>Notified</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {triggeredAlerts.map((a) => (
+                          <TableRow key={a.id}>
+                            <TableCell className="font-medium">{a.symbol}</TableCell>
+                            <TableCell className="text-sm">{a.alert_type.replace(/_/g, " ")}</TableCell>
+                            <TableCell className="text-sm">
+                              {a.alert_type.startsWith("PCT") ? `${a.target_value}%` : `$${a.target_value}`}
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              {a.triggered_at ? new Date(a.triggered_at).toLocaleString() : "—"}
+                            </TableCell>
+                            <TableCell>
+                              {a.notification_sent ? (
+                                <span className="text-emerald-600 dark:text-emerald-400 text-sm">✓</span>
+                              ) : (
+                                <span className="text-muted-foreground text-sm">—</span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </Card>
+              )}
+            </TabsContent>
+          </Tabs>
+        </div>
+      )}
 
       {/* Delete watchlist entry confirmation */}
       <AlertDialog open={!!deleteConfirm} onOpenChange={(o) => !o && setDeleteConfirm(null)}>
@@ -1186,5 +1349,81 @@ function ScreenOverlapMatrix({
         </Card>
       )}
     </div>
+  );
+}
+
+/* ── Alert Popover for expanded rows ── */
+const ALERT_TYPE_LABELS: Record<AlertType, string> = {
+  PRICE_ABOVE: "Price Above",
+  PRICE_BELOW: "Price Below",
+  PCT_CHANGE_UP: "% Up",
+  PCT_CHANGE_DOWN: "% Down",
+};
+
+function AlertPopover({
+  entryId,
+  symbol,
+  currentPrice,
+  createAlert,
+}: {
+  entryId: string;
+  symbol: string;
+  currentPrice: number | null;
+  createAlert: (data: {
+    watchlist_entry_id: string;
+    symbol: string;
+    alert_type: AlertType;
+    target_value: number;
+    reference_price?: number;
+  }) => Promise<void>;
+}) {
+  const [alertType, setAlertType] = useState<AlertType>("PRICE_ABOVE");
+  const [value, setValue] = useState("");
+  const [open, setOpen] = useState(false);
+
+  const isPct = alertType === "PCT_CHANGE_UP" || alertType === "PCT_CHANGE_DOWN";
+
+  const handleAdd = async () => {
+    if (!value) return;
+    await createAlert({
+      watchlist_entry_id: entryId,
+      symbol,
+      alert_type: alertType,
+      target_value: parseFloat(value),
+      reference_price: isPct && currentPrice ? currentPrice : undefined,
+    });
+    setValue("");
+    setOpen(false);
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" className="h-7 text-xs gap-1">
+          <Bell className="h-3 w-3" />
+          Add Alert
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-3 space-y-3" align="start">
+        <div className="space-y-1">
+          <Label className="text-xs">Alert Type</Label>
+          <Select value={alertType} onValueChange={(v) => setAlertType(v as AlertType)}>
+            <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {(Object.keys(ALERT_TYPE_LABELS) as AlertType[]).map((t) => (
+                <SelectItem key={t} value={t} className="text-xs">{ALERT_TYPE_LABELS[t]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">{isPct ? "Threshold (%)" : "Target Price ($)"}</Label>
+          <Input type="number" step={isPct ? "1" : "0.01"} value={value} onChange={(e) => setValue(e.target.value)} className="h-7 text-xs" placeholder={isPct ? "10" : "200.00"} />
+        </div>
+        <Button size="sm" className="w-full h-7 text-xs" onClick={handleAdd} disabled={!value}>
+          Set Alert
+        </Button>
+      </PopoverContent>
+    </Popover>
   );
 }
