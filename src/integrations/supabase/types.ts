@@ -135,7 +135,9 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean
+          last_notified_at: string | null
           notification_sent: boolean
+          notify_time: string | null
           reference_price: number | null
           symbol: string
           target_value: number
@@ -149,7 +151,9 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          last_notified_at?: string | null
           notification_sent?: boolean
+          notify_time?: string | null
           reference_price?: number | null
           symbol: string
           target_value: number
@@ -163,7 +167,9 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          last_notified_at?: string | null
           notification_sent?: boolean
+          notify_time?: string | null
           reference_price?: number | null
           symbol?: string
           target_value?: number

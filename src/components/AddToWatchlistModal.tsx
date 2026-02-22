@@ -28,6 +28,7 @@ export interface PendingAlertData {
   alert_type: AlertType;
   target_value: number;
   reference_price?: number;
+  notify_time?: string;
 }
 
 interface Props {
@@ -63,6 +64,7 @@ export function AddToWatchlistModal({ open, onOpenChange, tags, fmpApiKey, initi
   const [alertEnabled, setAlertEnabled] = useState(false);
   const [alertType, setAlertType] = useState<AlertType>("PRICE_ABOVE");
   const [alertValue, setAlertValue] = useState("");
+  const [alertNotifyTime, setAlertNotifyTime] = useState("");
 
   useEffect(() => {
     if (open && initialSymbol) {
@@ -86,7 +88,7 @@ export function AddToWatchlistModal({ open, onOpenChange, tags, fmpApiKey, initi
     if (!open) {
       setSymbol(""); setCompanyName(""); setPrice(""); setNotes("");
       setSelectedTags([]); setPreview(null); setIndustry(""); setSector("");
-      setMarketCap(null); setAlertEnabled(false); setAlertType("PRICE_ABOVE"); setAlertValue("");
+      setMarketCap(null); setAlertEnabled(false); setAlertType("PRICE_ABOVE"); setAlertValue(""); setAlertNotifyTime("");
     }
   }, [open, initialSymbol, fmpApiKey]);
 
@@ -122,6 +124,7 @@ export function AddToWatchlistModal({ open, onOpenChange, tags, fmpApiKey, initi
               (alertType === "PCT_CHANGE_UP" || alertType === "PCT_CHANGE_DOWN") && price
                 ? parseFloat(price)
                 : undefined,
+            notify_time: alertNotifyTime || undefined,
           }
         : undefined;
 
@@ -238,6 +241,11 @@ export function AddToWatchlistModal({ open, onOpenChange, tags, fmpApiKey, initi
                         : (parseFloat(price) * (1 - (parseFloat(alertValue) || 0) / 100)).toFixed(2)}
                     </p>
                   )}
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Notify Time (ET, optional)</Label>
+                  <Input type="time" value={alertNotifyTime} onChange={(e) => setAlertNotifyTime(e.target.value)} className="h-8 text-sm w-32" />
+                  <p className="text-[11px] text-muted-foreground">Leave blank for default from Settings</p>
                 </div>
               </div>
             )}

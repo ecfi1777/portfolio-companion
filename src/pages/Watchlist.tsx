@@ -424,6 +424,7 @@ export default function Watchlist() {
               alert_type: alert.alert_type,
               target_value: alert.target_value,
               reference_price: alert.reference_price,
+              notify_time: alert.notify_time,
             });
           }
         }}
@@ -1418,10 +1419,12 @@ function AlertPopover({
     alert_type: AlertType;
     target_value: number;
     reference_price?: number;
+    notify_time?: string;
   }) => Promise<void>;
 }) {
   const [alertType, setAlertType] = useState<AlertType>("PRICE_ABOVE");
   const [value, setValue] = useState("");
+  const [notifyTime, setNotifyTime] = useState("");
   const [open, setOpen] = useState(false);
 
   const isPct = alertType === "PCT_CHANGE_UP" || alertType === "PCT_CHANGE_DOWN";
@@ -1434,8 +1437,10 @@ function AlertPopover({
       alert_type: alertType,
       target_value: parseFloat(value),
       reference_price: isPct && currentPrice ? currentPrice : undefined,
+      notify_time: notifyTime || undefined,
     });
     setValue("");
+    setNotifyTime("");
     setOpen(false);
   };
 
@@ -1462,6 +1467,11 @@ function AlertPopover({
         <div className="space-y-1">
           <Label className="text-xs">{isPct ? "Threshold (%)" : "Target Price ($)"}</Label>
           <Input type="number" step={isPct ? "1" : "0.01"} value={value} onChange={(e) => setValue(e.target.value)} className="h-7 text-xs" placeholder={isPct ? "10" : "200.00"} />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Notify Time (ET)</Label>
+          <Input type="time" value={notifyTime} onChange={(e) => setNotifyTime(e.target.value)} className="h-7 text-xs w-28" />
+          <p className="text-[10px] text-muted-foreground">Blank = use default</p>
         </div>
         <Button size="sm" className="w-full h-7 text-xs" onClick={handleAdd} disabled={!value}>
           Set Alert

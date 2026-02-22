@@ -12,6 +12,7 @@ export interface PortfolioSettings {
   fmp_api_key?: string;
   notification_email?: string;
   resend_api_key?: string;
+  default_notify_time?: string;
 }
 
 export const DEFAULT_SETTINGS: PortfolioSettings = {

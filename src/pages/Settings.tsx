@@ -271,6 +271,19 @@ export default function Settings() {
             />
           </div>
           <div className="space-y-1">
+            <Label htmlFor="default-notify-time">Default Alert Notification Time (ET)</Label>
+            <Input
+              id="default-notify-time"
+              type="time"
+              value={draft.default_notify_time ?? "09:30"}
+              onChange={(e) => setDraft((d) => ({ ...d, default_notify_time: e.target.value }))}
+              className="w-40"
+            />
+            <p className="text-xs text-muted-foreground">
+              Alerts will only fire within ±10 minutes of this time. Individual alerts can override this.
+            </p>
+          </div>
+          <div className="space-y-1">
             <Label htmlFor="resend-key">Resend API Key</Label>
             <div className="flex gap-2">
               <div className="relative flex-1">
