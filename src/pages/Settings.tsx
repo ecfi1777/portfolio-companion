@@ -5,13 +5,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { usePortfolioSettings, DEFAULT_SETTINGS, type PortfolioSettings } from "@/hooks/use-portfolio-settings";
 import { useToast } from "@/hooks/use-toast";
-import { RotateCcw, Save, Eye, EyeOff, Key } from "lucide-react";
+import { RotateCcw, Save, Eye, EyeOff, Key, Mail } from "lucide-react";
 
 export default function Settings() {
   const { settings, updateSettings, loading } = usePortfolioSettings();
   const { toast } = useToast();
   const [draft, setDraft] = useState<PortfolioSettings>(settings);
   const [showApiKey, setShowApiKey] = useState(false);
+  const [showResendKey, setShowResendKey] = useState(false);
 
   useEffect(() => {
     setDraft(settings);
@@ -237,6 +238,56 @@ export default function Settings() {
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 >
                   {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Notifications */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Mail className="h-4 w-4" />
+            Notifications
+          </CardTitle>
+          <CardDescription>
+            Configure email notifications for price alerts. Requires a Resend API key — get one free at{" "}
+            <a href="https://resend.com" target="_blank" rel="noopener noreferrer" className="underline text-primary">
+              resend.com
+            </a>
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1">
+            <Label htmlFor="notification-email">Notification Email</Label>
+            <Input
+              id="notification-email"
+              type="email"
+              placeholder="you@example.com"
+              value={draft.notification_email ?? ""}
+              onChange={(e) => setDraft((d) => ({ ...d, notification_email: e.target.value }))}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="resend-key">Resend API Key</Label>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Input
+                  id="resend-key"
+                  type={showResendKey ? "text" : "password"}
+                  placeholder="re_..."
+                  value={draft.resend_api_key ?? ""}
+                  onChange={(e) => setDraft((d) => ({ ...d, resend_api_key: e.target.value }))}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowResendKey((v) => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showResendKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
             </div>

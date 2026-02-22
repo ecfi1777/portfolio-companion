@@ -142,8 +142,8 @@ export function useWatchlist() {
     industry?: string;
     sector?: string;
     market_cap?: number;
-  }) => {
-    if (!user) return;
+  }): Promise<string | null> => {
+    if (!user) return null;
     const mktCapCategory = data.market_cap ? getMarketCapCategory(data.market_cap) : null;
     const { data: inserted, error } = await supabase
       .from("watchlist_entries")
@@ -168,7 +168,7 @@ export function useWatchlist() {
       } else {
         toast({ title: "Error", description: error.message, variant: "destructive" });
       }
-      return;
+      return null;
     }
 
     if (inserted && data.tag_ids?.length) {
@@ -182,6 +182,7 @@ export function useWatchlist() {
 
     toast({ title: "Added", description: `${data.symbol.toUpperCase()} added to watchlist.` });
     await fetchAll();
+    return inserted?.id ?? null;
   };
 
   const deleteEntry = async (id: string) => {

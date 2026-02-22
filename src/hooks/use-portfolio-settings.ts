@@ -10,6 +10,8 @@ export interface PortfolioSettings {
     TT: number; CON_MIN: number; CON_MAX: number;
   };
   fmp_api_key?: string;
+  notification_email?: string;
+  resend_api_key?: string;
 }
 
 export const DEFAULT_SETTINGS: PortfolioSettings = {
