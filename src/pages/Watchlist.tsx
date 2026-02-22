@@ -161,6 +161,7 @@ export default function Watchlist() {
   const [refreshing, setRefreshing] = useState(false);
 
   const [addOpen, setAddOpen] = useState(false);
+  const [addPrefill, setAddPrefill] = useState<string | undefined>(undefined);
   const [tagsOpen, setTagsOpen] = useState(false);
   const [screenOpen, setScreenOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -169,7 +170,6 @@ export default function Watchlist() {
   const [historyFilter, setHistoryFilter] = useState<string>("all");
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
   const [deleteScreenConfirm, setDeleteScreenConfirm] = useState<{ id: string; name: string } | null>(null);
-  const [addingSymbol, setAddingSymbol] = useState<string | null>(null);
 
   // Filters
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
@@ -391,14 +391,14 @@ export default function Watchlist() {
             <Settings className="mr-1 h-4 w-4" />
             Manage Tags
           </Button>
-          <Button size="sm" onClick={() => setAddOpen(true)}>
+          <Button size="sm" onClick={() => { setAddPrefill(undefined); setAddOpen(true); }}>
             <Plus className="mr-1 h-4 w-4" />
             Add to Watchlist
           </Button>
         </div>
       </div>
 
-      <AddToWatchlistModal open={addOpen} onOpenChange={setAddOpen} tags={tags} fmpApiKey={fmpApiKey} onSave={addEntry} />
+      <AddToWatchlistModal open={addOpen} onOpenChange={setAddOpen} tags={tags} fmpApiKey={fmpApiKey} initialSymbol={addPrefill} onSave={addEntry} />
       <ManageTagsModal open={tagsOpen} onOpenChange={setTagsOpen} tags={tags} onCreate={createTag} onUpdate={updateTag} onDelete={deleteTag} />
       <ScreenUploadModal
         open={screenOpen}
@@ -452,7 +452,7 @@ export default function Watchlist() {
             <Eye className="mb-4 h-10 w-10 text-muted-foreground" />
             <p className="text-lg font-medium">Your watchlist is empty</p>
             <p className="text-sm text-muted-foreground mb-4">Track symbols you're interested in but don't own yet.</p>
-            <Button onClick={() => setAddOpen(true)}>
+            <Button onClick={() => { setAddPrefill(undefined); setAddOpen(true); }}>
               <Plus className="mr-1 h-4 w-4" />
               Add Your First Stock
             </Button>
@@ -782,13 +782,10 @@ export default function Watchlist() {
                                                 variant="ghost"
                                                 size="sm"
                                                 className="h-5 w-5 p-0"
-                                                disabled={addingSymbol === sym}
-                                                onClick={async (e) => {
+                                                onClick={(e) => {
                                                   e.stopPropagation();
-                                                  setAddingSymbol(sym);
-                                                  await addEntry({ symbol: sym });
-                                                  await refetchWatchlist();
-                                                  setAddingSymbol(null);
+                                                  setAddPrefill(sym);
+                                                  setAddOpen(true);
                                                 }}
                                                 title={`Add ${sym} to watchlist`}
                                               >
@@ -815,7 +812,7 @@ export default function Watchlist() {
       )}
 
       {/* Cross-Screen Overlap Matrix */}
-      <ScreenOverlapMatrix runs={runs} screens={screens} entries={entries} addEntry={addEntry} refetchWatchlist={refetchWatchlist} />
+      <ScreenOverlapMatrix runs={runs} screens={screens} entries={entries} onQuickAdd={(sym) => { setAddPrefill(sym); setAddOpen(true); }} />
 
       {/* Delete watchlist entry confirmation */}
       <AlertDialog open={!!deleteConfirm} onOpenChange={(o) => !o && setDeleteConfirm(null)}>
@@ -871,17 +868,14 @@ function ScreenOverlapMatrix({
   runs,
   screens,
   entries,
-  addEntry,
-  refetchWatchlist,
+  onQuickAdd,
 }: {
   runs: ReturnType<typeof import("@/hooks/use-screens").useScreens>["runs"];
   screens: ReturnType<typeof import("@/hooks/use-screens").useScreens>["screens"];
   entries: WatchlistEntry[];
-  addEntry: (data: { symbol: string; company_name?: string }) => Promise<void>;
-  refetchWatchlist: () => Promise<void>;
+  onQuickAdd: (symbol: string) => void;
 }) {
   const [selectedPair, setSelectedPair] = useState<[number, number] | null>(null);
-  const [addingSymbol, setAddingSymbol] = useState<string | null>(null);
 
   const watchlistSymbolSet = useMemo(() => new Set(entries.map((e) => e.symbol.toUpperCase())), [entries]);
 
@@ -961,11 +955,8 @@ function ScreenOverlapMatrix({
       .sort((a, b) => b.screenIndices.length - a.screenIndices.length || a.symbol.localeCompare(b.symbol));
   }, [latestByScreen, watchlistSymbolSet]);
 
-  const handleQuickAdd = async (symbol: string) => {
-    setAddingSymbol(symbol);
-    await addEntry({ symbol });
-    await refetchWatchlist();
-    setAddingSymbol(null);
+  const handleQuickAdd = (symbol: string) => {
+    onQuickAdd(symbol);
   };
 
   if (latestByScreen.length < 2) return null;
@@ -1069,7 +1060,7 @@ function ScreenOverlapMatrix({
                     {!inWatchlist && (
                       <Button
                         variant="ghost" size="sm" className="h-5 w-5 p-0"
-                        disabled={addingSymbol === sym}
+                        
                         onClick={() => handleQuickAdd(sym)}
                         title={`Add ${sym} to watchlist`}
                       >
@@ -1132,7 +1123,7 @@ function ScreenOverlapMatrix({
                         ) : (
                           <Button
                             variant="ghost" size="sm" className="h-6 px-2 text-xs"
-                            disabled={addingSymbol === symbol}
+                            
                             onClick={() => handleQuickAdd(symbol)}
                           >
                             <Plus className="h-3 w-3 mr-1" />
