@@ -3,7 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
-import { TrendingUp, BarChart3, Eye, LogOut, Settings } from "lucide-react";
+import { TrendingUp, BarChart3, Eye, LogOut, Settings, FileSearch } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAlerts } from "@/hooks/use-alerts";
 import { TriggeredAlertsBanner } from "@/components/TriggeredAlertsBanner";
@@ -11,6 +11,7 @@ import { TriggeredAlertsBanner } from "@/components/TriggeredAlertsBanner";
 const navItems = [
   { to: "/", label: "Portfolio", icon: BarChart3 },
   { to: "/watchlist", label: "Watchlist", icon: Eye },
+  { to: "/screens", label: "Screens", icon: FileSearch },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 
