@@ -56,7 +56,7 @@ export async function lookupSymbol(symbol: string, apiKey: string): Promise<Prof
       price: p.price ?? 0,
       industry: p.industry ?? "",
       sector: p.sector ?? "",
-      mktCap: p.mktCap ?? 0,
+      mktCap: p.marketCap ?? p.mktCap ?? 0,
     };
 
     profileCache.set(symbol.toUpperCase(), { data: result, expiry: Date.now() + PROFILE_TTL });
