@@ -3,9 +3,10 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { usePortfolioSettings, DEFAULT_SETTINGS, type PortfolioSettings, type CategoryConfig, type TierConfig } from "@/hooks/use-portfolio-settings";
+import { usePortfolioSettings, DEFAULT_SETTINGS, getPerPositionTarget, type PortfolioSettings, type CategoryConfig, type TierConfig } from "@/hooks/use-portfolio-settings";
 import { useToast } from "@/hooks/use-toast";
 import { RotateCcw, Save, Eye, EyeOff, Key, Mail, Check, Plus, Trash2 } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 type SectionKey = "tiers" | "count" | "api" | "notifications";
 
@@ -16,10 +17,23 @@ export default function Settings() {
   const [showApiKey, setShowApiKey] = useState(false);
   const [showResendKey, setShowResendKey] = useState(false);
   const [savedSection, setSavedSection] = useState<SectionKey | null>(null);
+  const [portfolioTotal, setPortfolioTotal] = useState<number | null>(null);
 
   useEffect(() => {
     setDraft(settings);
   }, [settings]);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await (await import("@/integrations/supabase/client")).supabase
+        .from("positions")
+        .select("current_value");
+      if (data) {
+        const total = data.reduce((sum: number, p: any) => sum + (p.current_value ?? 0), 0);
+        setPortfolioTotal(total);
+      }
+    })();
+  }, []);
 
   const showSaved = useCallback((section: SectionKey) => {
     setSavedSection(section);
@@ -34,9 +48,9 @@ export default function Settings() {
     );
   }
 
-  // Compute total of all tier targets
+  // Compute total of all tier allocations
   const tierTotal = draft.categories.reduce(
-    (sum, cat) => sum + cat.tiers.reduce((s, t) => s + t.target_pct, 0),
+    (sum, cat) => sum + cat.tiers.reduce((s, t) => s + t.allocation_pct, 0),
     0
   );
   const tierValid = Math.abs(tierTotal - 100) < 0.01;
@@ -46,7 +60,7 @@ export default function Settings() {
     switch (section) {
       case "tiers":
         if (!tierValid) {
-          toast({ title: "Tier targets must sum to 100%", variant: "destructive" });
+          toast({ title: "Tier allocations must sum to 100%", variant: "destructive" });
           return;
         }
         next = { ...settings, categories: draft.categories };
@@ -121,7 +135,7 @@ export default function Settings() {
       const newKey = `${cat.key.substring(0, 3)}${cat.tiers.length + 1}`;
       cats[catIdx] = {
         ...cat,
-        tiers: [...cat.tiers, { key: newKey, name: newKey, target_pct: 0 }],
+        tiers: [...cat.tiers, { key: newKey, name: newKey, allocation_pct: 0, max_positions: 1 }],
       };
       return { ...d, categories: cats };
     });
@@ -136,6 +150,9 @@ export default function Settings() {
       return { ...d, categories: cats };
     });
   };
+
+  const fmtDollar = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 
   const SectionActions = ({ section, disabled }: { section: SectionKey; disabled?: boolean }) => (
     <div className="flex items-center gap-2">
@@ -170,7 +187,7 @@ export default function Settings() {
             <div>
               <CardTitle className="text-base">Portfolio Tiers</CardTitle>
               <CardDescription>
-                Configure categories and their tiers. Tier targets must sum to 100%.{" "}
+                Set the allocation % and max positions per tier. Per-position weight is auto-calculated.{" "}
                 {!tierValid && (
                   <span className="text-destructive font-medium">
                     Currently {tierTotal.toFixed(1)}%
@@ -188,7 +205,7 @@ export default function Settings() {
         </CardHeader>
         <CardContent className="space-y-6">
           {draft.categories.map((cat, catIdx) => {
-            const catTotal = cat.tiers.reduce((s, t) => s + t.target_pct, 0);
+            const catTotal = cat.tiers.reduce((s, t) => s + t.allocation_pct, 0);
             return (
               <div key={cat.key} className="space-y-3">
                 <div className="flex items-center gap-3">
@@ -203,41 +220,82 @@ export default function Settings() {
                   </span>
                 </div>
 
-                <div className="space-y-2 pl-4 border-l-2 border-border ml-2">
-                  {cat.tiers.map((tier, tierIdx) => (
-                    <div key={tier.key} className="flex items-center gap-2">
-                      <Input
-                        value={tier.name}
-                        onChange={(e) => updateTier(catIdx, tierIdx, { name: e.target.value, key: e.target.value.toUpperCase().replace(/\s+/g, "_") })}
-                        className="h-8 text-sm w-24"
-                        placeholder="Tier name"
-                      />
-                      <div className="relative w-24">
-                        <Input
-                          type="number"
-                          step="0.5"
-                          min="0"
-                          value={tier.target_pct}
-                          onChange={(e) => updateTier(catIdx, tierIdx, { target_pct: Number(e.target.value) })}
-                          className="h-8 text-sm pr-7"
-                        />
-                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">%</span>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                        onClick={() => removeTier(catIdx, tierIdx)}
-                        disabled={cat.tiers.length <= 1}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  ))}
+                <div className="pl-2">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="text-xs h-8">Tier</TableHead>
+                        <TableHead className="text-xs h-8 text-right">Allocation %</TableHead>
+                        <TableHead className="text-xs h-8 text-right">Max Pos.</TableHead>
+                        <TableHead className="text-xs h-8 text-right">Per Position</TableHead>
+                        <TableHead className="text-xs h-8 w-8"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {cat.tiers.map((tier, tierIdx) => {
+                        const perPos = getPerPositionTarget(tier);
+                        const perPosDollar = portfolioTotal != null ? (perPos / 100) * portfolioTotal : null;
+                        return (
+                          <TableRow key={tier.key}>
+                            <TableCell className="py-1">
+                              <Input
+                                value={tier.name}
+                                onChange={(e) => updateTier(catIdx, tierIdx, { name: e.target.value, key: e.target.value.toUpperCase().replace(/\s+/g, "_") })}
+                                className="h-7 text-sm w-20"
+                                placeholder="Tier"
+                              />
+                            </TableCell>
+                            <TableCell className="py-1 text-right">
+                              <div className="relative w-20 ml-auto">
+                                <Input
+                                  type="number"
+                                  step="0.5"
+                                  min="0"
+                                  value={tier.allocation_pct}
+                                  onChange={(e) => updateTier(catIdx, tierIdx, { allocation_pct: Number(e.target.value) })}
+                                  className="h-7 text-sm pr-6"
+                                />
+                                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">%</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-1 text-right">
+                              <Input
+                                type="number"
+                                step="1"
+                                min="1"
+                                value={tier.max_positions}
+                                onChange={(e) => updateTier(catIdx, tierIdx, { max_positions: Math.max(1, Math.floor(Number(e.target.value))) })}
+                                className="h-7 text-sm w-16 ml-auto"
+                              />
+                            </TableCell>
+                            <TableCell className="py-1 text-right">
+                              <span className="text-xs text-muted-foreground tabular-nums">
+                                {perPos.toFixed(1)}%
+                                {perPosDollar != null && (
+                                  <span className="text-muted-foreground/60"> · {fmtDollar(perPosDollar)}</span>
+                                )}
+                              </span>
+                            </TableCell>
+                            <TableCell className="py-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                                onClick={() => removeTier(catIdx, tierIdx)}
+                                disabled={cat.tiers.length <= 1}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-7 text-xs text-muted-foreground"
+                    className="h-7 text-xs text-muted-foreground mt-1"
                     onClick={() => addTier(catIdx)}
                   >
                     <Plus className="h-3 w-3 mr-1" /> Add Tier
@@ -250,6 +308,14 @@ export default function Settings() {
               </div>
             );
           })}
+
+          {/* Grand total */}
+          <div className="border-t border-border pt-3 flex items-center justify-between">
+            <span className="text-sm font-medium">Total Allocation</span>
+            <span className={`text-sm font-bold tabular-nums ${tierValid ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}>
+              {tierTotal.toFixed(1)}%
+            </span>
+          </div>
         </CardContent>
       </Card>
 

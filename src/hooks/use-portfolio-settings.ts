@@ -5,7 +5,8 @@ import { useAuth } from "@/contexts/AuthContext";
 export interface TierConfig {
   key: string;
   name: string;
-  target_pct: number;
+  allocation_pct: number;
+  max_positions: number;
 }
 
 export interface CategoryConfig {
@@ -23,32 +24,36 @@ export interface PortfolioSettings {
   default_notify_time?: string;
 }
 
-/** Derive old-style category_targets from categories array */
+/** Per-position target for a tier = allocation_pct / max_positions */
+export function getPerPositionTarget(tier: TierConfig): number {
+  return tier.max_positions > 0 ? tier.allocation_pct / tier.max_positions : 0;
+}
+
+/** Derive category-level allocation targets (sum of tier allocation_pct) */
 export function getCategoryTargets(settings: PortfolioSettings): Record<string, number> {
   const targets: Record<string, number> = {};
   for (const cat of settings.categories) {
-    targets[cat.key] = cat.tiers.reduce((sum, t) => sum + t.target_pct, 0);
+    targets[cat.key] = cat.tiers.reduce((sum, t) => sum + t.allocation_pct, 0);
   }
   return targets;
 }
 
-/** Derive old-style tier_goals from categories array */
-export function getTierGoals(settings: PortfolioSettings): Record<string, number> {
-  const goals: Record<string, number> = {};
-  for (const cat of settings.categories) {
-    for (const t of cat.tiers) {
-      goals[t.key] = t.target_pct;
-    }
-  }
-  return goals;
-}
-
-/** Find the tier target_pct for a given tier key */
+/** Find the per-position target_pct for a given tier key */
 export function getTierTarget(tierKey: string | null, settings: PortfolioSettings): number | null {
   if (!tierKey) return null;
   for (const cat of settings.categories) {
     const t = cat.tiers.find((t) => t.key === tierKey);
-    if (t) return t.target_pct;
+    if (t) return getPerPositionTarget(t);
+  }
+  return null;
+}
+
+/** Find the tier config for a given tier key */
+export function getTierConfig(tierKey: string | null, settings: PortfolioSettings): TierConfig | null {
+  if (!tierKey) return null;
+  for (const cat of settings.categories) {
+    const t = cat.tiers.find((t) => t.key === tierKey);
+    if (t) return t;
   }
   return null;
 }
@@ -80,20 +85,20 @@ export const DEFAULT_SETTINGS: PortfolioSettings = {
       key: "CORE",
       display_name: "Core",
       tiers: [
-        { key: "C1", name: "C1", target_pct: 8.5 },
-        { key: "C2", name: "C2", target_pct: 6 },
-        { key: "C3", name: "C3", target_pct: 5 },
+        { key: "C1", name: "C1", allocation_pct: 25.5, max_positions: 3 },
+        { key: "C2", name: "C2", allocation_pct: 24.0, max_positions: 4 },
+        { key: "C3", name: "C3", allocation_pct: 15.0, max_positions: 3 },
       ],
     },
     {
       key: "TITAN",
       display_name: "Titan",
-      tiers: [{ key: "TT", name: "TT", target_pct: 2.5 }],
+      tiers: [{ key: "TT", name: "TT", allocation_pct: 25.0, max_positions: 10 }],
     },
     {
       key: "CONSENSUS",
       display_name: "Consensus",
-      tiers: [{ key: "CON", name: "CON", target_pct: 2.0 }],
+      tiers: [{ key: "CON", name: "CON", allocation_pct: 10.5, max_positions: 5 }],
     },
   ],
   position_count_target: { min: 25, max: 35 },
@@ -101,34 +106,59 @@ export const DEFAULT_SETTINGS: PortfolioSettings = {
 
 /** Detect old format and convert to new categories array */
 function migrateOldSettings(raw: Record<string, unknown>): PortfolioSettings {
-  // Already new format
+  // Already new format with allocation_pct
   if (Array.isArray(raw.categories)) {
+    const cats = raw.categories as any[];
+    // Check if tiers use old target_pct format (no allocation_pct)
+    const needsTierMigration = cats.some((cat: any) =>
+      cat.tiers?.some((t: any) => t.target_pct !== undefined && t.allocation_pct === undefined)
+    );
+    if (needsTierMigration) {
+      // Migrate target_pct -> allocation_pct with max_positions=1
+      const migrated: CategoryConfig[] = cats.map((cat: any) => ({
+        key: cat.key,
+        display_name: cat.display_name,
+        tiers: (cat.tiers || []).map((t: any) => ({
+          key: t.key,
+          name: t.name,
+          allocation_pct: t.allocation_pct ?? t.target_pct ?? 0,
+          max_positions: t.max_positions ?? 1,
+        })),
+      }));
+      return {
+        categories: migrated,
+        position_count_target: (raw.position_count_target as { min: number; max: number }) ?? DEFAULT_SETTINGS.position_count_target,
+        fmp_api_key: raw.fmp_api_key as string | undefined,
+        notification_email: raw.notification_email as string | undefined,
+        resend_api_key: raw.resend_api_key as string | undefined,
+        default_notify_time: raw.default_notify_time as string | undefined,
+      };
+    }
     return raw as unknown as PortfolioSettings;
   }
 
-  // Old format detected — convert
+  // Legacy format with tier_goals / category_targets
   const oldTiers = (raw.tier_goals ?? {}) as Record<string, number>;
-  const oldCats = (raw.category_targets ?? {}) as Record<string, number>;
 
   const categories: CategoryConfig[] = [
     {
       key: "CORE",
       display_name: "Core",
       tiers: [
-        { key: "C1", name: "C1", target_pct: oldTiers.C1 ?? 8.5 },
-        { key: "C2", name: "C2", target_pct: oldTiers.C2 ?? 6 },
-        { key: "C3", name: "C3", target_pct: oldTiers.C3 ?? 5 },
+        { key: "C1", name: "C1", allocation_pct: oldTiers.C1 ?? 8.5, max_positions: 1 },
+        { key: "C2", name: "C2", allocation_pct: oldTiers.C2 ?? 6, max_positions: 1 },
+        { key: "C3", name: "C3", allocation_pct: oldTiers.C3 ?? 5, max_positions: 1 },
       ],
     },
     {
       key: "TITAN",
       display_name: "Titan",
-      tiers: [{ key: "TT", name: "TT", target_pct: oldTiers.TT ?? 2.5 }],
+      tiers: [{ key: "TT", name: "TT", allocation_pct: oldTiers.TT ?? 2.5, max_positions: 1 }],
     },
     {
       key: "CONSENSUS",
       display_name: "Consensus",
-      tiers: [{ key: "CON", name: "CON", target_pct: oldTiers.CON_MIN ?? 2.0 }],
+      tiers: [{ key: "CON", name: "CON", allocation_pct: oldTiers.CON_MIN ?? 2.0, max_positions: 1 }],
     },
   ];
 
@@ -160,7 +190,8 @@ export function usePortfolioSettings() {
         const raw = data.settings as unknown as Record<string, unknown>;
         const migrated = migrateOldSettings(raw);
 
-        // If we migrated from old format, persist the new format
+        // Only auto-save for legacy tier_goals format
+        // Do NOT auto-save target_pct -> allocation_pct migration (let user review)
         if (!Array.isArray(raw.categories)) {
           await supabase
             .from("portfolio_settings")
