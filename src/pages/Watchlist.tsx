@@ -507,6 +507,7 @@ export default function Watchlist() {
                   const availableTags = tags.filter((t) => t.is_active && !entryTags.some((et) => et.id === t.id));
                   const entryAlerts = getAlertsForEntry(entry.id);
                   const hasActiveAlert = entryAlerts.some((a) => a.is_active);
+                  const hasTriggeredUnacked = entryAlerts.some((a) => a.triggered_at != null && a.acknowledged_at == null);
 
                   return (
                     <React.Fragment key={entry.id}>
@@ -548,7 +549,9 @@ export default function Watchlist() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          {hasActiveAlert ? (
+                          {hasTriggeredUnacked ? (
+                            <BellRing className="h-4 w-4 text-amber-500 fill-amber-500" />
+                          ) : hasActiveAlert ? (
                             <BellRing className="h-4 w-4 text-amber-500" />
                           ) : (
                             <Bell className="h-4 w-4 text-muted-foreground/30" />

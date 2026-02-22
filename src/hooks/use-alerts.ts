@@ -15,6 +15,7 @@ export interface PriceAlert {
   reference_price: number | null;
   is_active: boolean;
   triggered_at: string | null;
+  acknowledged_at: string | null;
   notification_sent: boolean;
   created_at: string;
 }
@@ -98,19 +99,49 @@ export function useAlerts() {
     [alerts]
   );
 
+  const acknowledgeAlert = useCallback(
+    async (id: string) => {
+      if (!user) return;
+      await supabase
+        .from("price_alerts")
+        .update({ acknowledged_at: new Date().toISOString() } as any)
+        .eq("id", id);
+      await fetchAlerts();
+    },
+    [user, fetchAlerts]
+  );
+
+  const acknowledgeAllAlerts = useCallback(
+    async () => {
+      if (!user) return;
+      const unacked = alerts.filter((a) => a.triggered_at != null && a.acknowledged_at == null);
+      if (unacked.length === 0) return;
+      await supabase
+        .from("price_alerts")
+        .update({ acknowledged_at: new Date().toISOString() } as any)
+        .in("id", unacked.map((a) => a.id));
+      await fetchAlerts();
+    },
+    [user, alerts, fetchAlerts]
+  );
+
   const activeAlerts = alerts.filter((a) => a.is_active);
   const triggeredAlerts = alerts.filter((a) => a.triggered_at != null).sort(
     (a, b) => new Date(b.triggered_at!).getTime() - new Date(a.triggered_at!).getTime()
   );
+  const unacknowledgedAlerts = triggeredAlerts.filter((a) => a.acknowledged_at == null);
 
   return {
     alerts,
     activeAlerts,
     triggeredAlerts,
+    unacknowledgedAlerts,
     loading,
     createAlert,
     updateAlert,
     deleteAlert,
+    acknowledgeAlert,
+    acknowledgeAllAlerts,
     getAlertsForEntry,
     refetch: fetchAlerts,
   };

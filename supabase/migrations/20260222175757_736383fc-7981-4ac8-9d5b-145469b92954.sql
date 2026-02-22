@@ -1,0 +1,1 @@
+ALTER TABLE public.price_alerts ADD COLUMN acknowledged_at timestamptz DEFAULT NULL;

@@ -5,6 +5,8 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { TrendingUp, BarChart3, Eye, LogOut, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAlerts } from "@/hooks/use-alerts";
+import { TriggeredAlertsBanner } from "@/components/TriggeredAlertsBanner";
 
 const navItems = [
   { to: "/", label: "Portfolio", icon: BarChart3 },
@@ -15,6 +17,7 @@ const navItems = [
 export function AppLayout({ children }: { children: ReactNode }) {
   const { signOut } = useAuth();
   const location = useLocation();
+  const { unacknowledgedAlerts, acknowledgeAlert, acknowledgeAllAlerts } = useAlerts();
 
   return (
     <div className="flex min-h-screen">
@@ -55,6 +58,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
       {/* Main content */}
       <main className="flex-1 overflow-auto bg-background">
+        <TriggeredAlertsBanner
+          alerts={unacknowledgedAlerts}
+          onDismiss={acknowledgeAlert}
+          onDismissAll={acknowledgeAllAlerts}
+        />
         {children}
       </main>
     </div>

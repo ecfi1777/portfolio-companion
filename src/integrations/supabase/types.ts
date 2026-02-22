@@ -130,6 +130,7 @@ export type Database = {
       }
       price_alerts: {
         Row: {
+          acknowledged_at: string | null
           alert_type: Database["public"]["Enums"]["alert_type"]
           created_at: string
           id: string
@@ -143,6 +144,7 @@ export type Database = {
           watchlist_entry_id: string
         }
         Insert: {
+          acknowledged_at?: string | null
           alert_type: Database["public"]["Enums"]["alert_type"]
           created_at?: string
           id?: string
@@ -156,6 +158,7 @@ export type Database = {
           watchlist_entry_id: string
         }
         Update: {
+          acknowledged_at?: string | null
           alert_type?: Database["public"]["Enums"]["alert_type"]
           created_at?: string
           id?: string
