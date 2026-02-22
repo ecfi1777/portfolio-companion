@@ -8,8 +8,8 @@ import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { AppLayout } from "@/components/AppLayout";
 import Auth from "./pages/Auth";
 import Portfolio from "./pages/Portfolio";
-
 import Watchlist from "./pages/Watchlist";
+import Screens from "./pages/Screens";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
@@ -41,6 +41,7 @@ const App = () => (
               <Route path="/auth" element={<AuthRoute />} />
               <Route path="/" element={<ProtectedRoute><Portfolio /></ProtectedRoute>} />
               <Route path="/watchlist" element={<ProtectedRoute><Watchlist /></ProtectedRoute>} />
+              <Route path="/screens" element={<ProtectedRoute><Screens /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
               <Route path="*" element={<NotFound />} />
             </Routes>

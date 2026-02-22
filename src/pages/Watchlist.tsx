@@ -19,19 +19,16 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Eye, Plus, Settings, Search, Bell, BellRing, ChevronDown, ChevronUp, ArrowUpDown, Trash2, X, Tag as TagIcon, Upload, FileSearch, RefreshCw, AlertTriangle, Clock,
+  Eye, Plus, Settings, Search, Bell, BellRing, ChevronDown, ChevronUp, ArrowUpDown, Trash2, X, Tag as TagIcon, RefreshCw, AlertTriangle, Clock,
 } from "lucide-react";
 import { useWatchlist, type WatchlistEntry } from "@/hooks/use-watchlist";
-import { useScreens } from "@/hooks/use-screens";
 import { usePortfolioSettings } from "@/hooks/use-portfolio-settings";
 import { useAlerts, type AlertType, type PriceAlert } from "@/hooks/use-alerts";
 import { AddToWatchlistModal, type AddToWatchlistData, type PendingAlertData } from "@/components/AddToWatchlistModal";
 import { ManageTagsModal } from "@/components/ManageTagsModal";
-import { ScreenUploadModal } from "@/components/ScreenUploadModal";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatMarketCap } from "@/lib/market-cap";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 /* ── Formatters ── */
@@ -159,7 +156,6 @@ export default function Watchlist() {
     entries, tags, loading, addEntry, deleteEntry, updateEntryNotes,
     addEntryTag, removeEntryTag, createTag, updateTag, deleteTag, refreshPrices, refetch: refetchWatchlist,
   } = useWatchlist();
-  const { screens, runs, createScreen, createRun, deleteScreen } = useScreens();
   const { settings } = usePortfolioSettings();
   const { activeAlerts, triggeredAlerts, createAlert, deleteAlert, getAlertsForEntry, refetch: refetchAlerts } = useAlerts();
   const fmpApiKey = settings.fmp_api_key;
@@ -169,17 +165,11 @@ export default function Watchlist() {
   const [addOpen, setAddOpen] = useState(false);
   const [addPrefill, setAddPrefill] = useState<string | undefined>(undefined);
   const [tagsOpen, setTagsOpen] = useState(false);
-  const [screenOpen, setScreenOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<WatchlistEntry | null>(null);
-  const [historyFilter, setHistoryFilter] = useState<string>("all");
-  const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
-  const [deleteScreenConfirm, setDeleteScreenConfirm] = useState<{ id: string; name: string } | null>(null);
 
   // Collapsible section states
-  const [screenHistoryOpen, setScreenHistoryOpen] = useState(false);
-  const [overlapOpen, setOverlapOpen] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
 
   // Filters
@@ -232,7 +222,6 @@ export default function Watchlist() {
   const processed = useMemo(() => {
     let result = entries;
 
-    // Text search
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter(
@@ -240,22 +229,18 @@ export default function Watchlist() {
       );
     }
 
-    // Tag filter (ANY match)
     if (selectedTags.size > 0) {
       result = result.filter((e) => e.tags?.some((t) => selectedTags.has(t.id)));
     }
 
-    // Market cap filter
     if (selectedCaps.size > 0) {
       result = result.filter((e) => e.market_cap_category && selectedCaps.has(e.market_cap_category));
     }
 
-    // Sector filter
     if (selectedSectors.size > 0) {
       result = result.filter((e) => e.sector && selectedSectors.has(e.sector));
     }
 
-    // Performance filter
     if (perfFilter !== "all") {
       result = result.filter((e) => {
         const chg = calcSinceAdded(e);
@@ -264,28 +249,15 @@ export default function Watchlist() {
       });
     }
 
-    // Sort
     const sorted = [...result].sort((a, b) => {
       let cmp = 0;
       switch (sortKey) {
-        case "symbol":
-          cmp = a.symbol.localeCompare(b.symbol);
-          break;
-        case "price":
-          cmp = (a.current_price ?? 0) - (b.current_price ?? 0);
-          break;
-        case "dayChg":
-          cmp = (calcDayChg(a) ?? -Infinity) - (calcDayChg(b) ?? -Infinity);
-          break;
-        case "sinceAdded":
-          cmp = (calcSinceAdded(a) ?? -Infinity) - (calcSinceAdded(b) ?? -Infinity);
-          break;
-        case "marketCap":
-          cmp = (a.market_cap ?? 0) - (b.market_cap ?? 0);
-          break;
-        case "dateAdded":
-          cmp = new Date(a.date_added).getTime() - new Date(b.date_added).getTime();
-          break;
+        case "symbol": cmp = a.symbol.localeCompare(b.symbol); break;
+        case "price": cmp = (a.current_price ?? 0) - (b.current_price ?? 0); break;
+        case "dayChg": cmp = (calcDayChg(a) ?? -Infinity) - (calcDayChg(b) ?? -Infinity); break;
+        case "sinceAdded": cmp = (calcSinceAdded(a) ?? -Infinity) - (calcSinceAdded(b) ?? -Infinity); break;
+        case "marketCap": cmp = (a.market_cap ?? 0) - (b.market_cap ?? 0); break;
+        case "dateAdded": cmp = new Date(a.date_added).getTime() - new Date(b.date_added).getTime(); break;
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
@@ -335,7 +307,7 @@ export default function Watchlist() {
   const handleManualRefresh = async () => {
     if (!fmpApiKey) return;
     setRefreshing(true);
-    const count = await refreshPrices(fmpApiKey);
+    await refreshPrices(fmpApiKey);
     setRefreshing(false);
   };
 
@@ -394,10 +366,6 @@ export default function Watchlist() {
               {!fmpApiKey && <TooltipContent>Set your FMP API key in Settings</TooltipContent>}
             </Tooltip>
           </TooltipProvider>
-          <Button variant="outline" size="sm" onClick={() => setScreenOpen(true)}>
-            <Upload className="mr-1 h-4 w-4" />
-            Upload Screen
-          </Button>
           <Button variant="outline" size="sm" onClick={() => setTagsOpen(true)}>
             <Settings className="mr-1 h-4 w-4" />
             Manage Tags
@@ -430,17 +398,6 @@ export default function Watchlist() {
         }}
       />
       <ManageTagsModal open={tagsOpen} onOpenChange={setTagsOpen} tags={tags} onCreate={createTag} onUpdate={updateTag} onDelete={deleteTag} />
-      <ScreenUploadModal
-        open={screenOpen}
-        onOpenChange={setScreenOpen}
-        screens={screens}
-        entries={entries}
-        tags={tags}
-        createScreen={createScreen}
-        createRun={createRun}
-        addEntry={async (data) => { await addEntry(data); }}
-        refetchWatchlist={refetchWatchlist}
-      />
 
       {/* Search + Filters */}
       <div className="flex flex-wrap items-center gap-2">
@@ -748,172 +705,6 @@ export default function Watchlist() {
         </Card>
       )}
 
-
-      {/* Screen History */}
-      {(runs.length > 0 || screens.length > 0) && (
-        <div className="space-y-3">
-          <div
-            className="flex items-center justify-between cursor-pointer select-none"
-            onClick={() => setScreenHistoryOpen((o) => !o)}
-          >
-            <h2 className="text-lg font-semibold flex items-center gap-2">
-              <FileSearch className="h-5 w-5" />
-              Screen History
-              <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${screenHistoryOpen ? "rotate-180" : ""}`} />
-            </h2>
-            {screenHistoryOpen && (
-              <div onClick={(e) => e.stopPropagation()}>
-                <Select value={historyFilter} onValueChange={setHistoryFilter}>
-                  <SelectTrigger className="w-40 h-8">
-                    <SelectValue placeholder="All screens" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Screens</SelectItem>
-                    {screens.map((s) => (
-                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-          </div>
-
-          {screenHistoryOpen && (<>
-
-          {/* Screens list with delete */}
-          <div className="flex flex-wrap gap-2">
-            {screens.map((s) => (
-              <div key={s.id} className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-sm">
-                <span className="font-medium">{s.name}</span>
-                <span className="text-muted-foreground text-xs">({s.short_code})</span>
-                <button
-                  className="ml-1 text-muted-foreground hover:text-destructive transition-colors"
-                  onClick={() => setDeleteScreenConfirm({ id: s.id, name: s.name })}
-                  title={`Delete ${s.name}`}
-                >
-                  <Trash2 className="h-3 w-3" />
-                </button>
-              </div>
-            ))}
-          </div>
-
-          {runs.length > 0 && (
-            <Card>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-8" />
-                      <TableHead>Date</TableHead>
-                      <TableHead>Screen</TableHead>
-                      <TableHead className="text-right">Total Symbols</TableHead>
-                      <TableHead className="text-right">Matches</TableHead>
-                      <TableHead>Auto Tag</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {runs
-                      .filter((r) => historyFilter === "all" || r.screen_id === historyFilter)
-                      .map((run) => {
-                        const isRunExpanded = expandedRunId === run.id;
-                        const matchedSymbols = run.matched_symbols ?? [];
-                        const matchedSet = new Set(matchedSymbols.map((s) => s.toUpperCase()));
-                        const watchlistSymbols = new Set(entries.map((e) => e.symbol.toUpperCase()));
-                        return (
-                          <React.Fragment key={run.id}>
-                            <TableRow
-                              className="cursor-pointer"
-                              onClick={() => setExpandedRunId(isRunExpanded ? null : run.id)}
-                            >
-                              <TableCell className="w-8">
-                                {isRunExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                              </TableCell>
-                              <TableCell className="text-sm">{new Date(run.run_date).toLocaleDateString()}</TableCell>
-                              <TableCell className="text-sm font-medium">{run.screen?.name ?? "—"}</TableCell>
-                              <TableCell className="text-right text-sm">{run.total_symbols}</TableCell>
-                              <TableCell className="text-right text-sm">{run.match_count}</TableCell>
-                              <TableCell>
-                                {run.auto_tag_code && (
-                                  <Badge variant="secondary" className="text-xs">{run.auto_tag_code}</Badge>
-                                )}
-                              </TableCell>
-                            </TableRow>
-                            {isRunExpanded && (
-                              <TableRow>
-                                <TableCell colSpan={6} className="bg-muted/30 p-4">
-                                  <div className="space-y-3">
-                                    <h4 className="text-sm font-medium mb-2">
-                                      All Symbols ({(run.all_symbols ?? matchedSymbols).length})
-                                      <span className="ml-2 text-muted-foreground font-normal text-xs">
-                                        — {matchedSymbols.length} in watchlist
-                                      </span>
-                                    </h4>
-                                    <div className="flex flex-wrap gap-1.5">
-                                      {((run.all_symbols ?? []).length > 0 ? run.all_symbols! : matchedSymbols).map((sym) => {
-                                        const inWatchlist = watchlistSymbols.has(sym.toUpperCase());
-                                        const isMatch = matchedSet.has(sym.toUpperCase());
-                                        return (
-                                          <div key={sym} className="flex items-center gap-1">
-                                            <Badge
-                                              variant={isMatch ? "default" : "outline"}
-                                              className={`text-xs ${isMatch ? "" : "opacity-60"}`}
-                                            >
-                                              {sym}
-                                            </Badge>
-                                            {!inWatchlist && (
-                                              <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                className="h-5 w-5 p-0"
-                                                onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  setAddPrefill(sym);
-                                                  setAddOpen(true);
-                                                }}
-                                                title={`Add ${sym} to watchlist`}
-                                              >
-                                                <Plus className="h-3 w-3" />
-                                              </Button>
-                                            )}
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  </div>
-                                </TableCell>
-                              </TableRow>
-                            )}
-                          </React.Fragment>
-                        );
-                      })}
-                  </TableBody>
-                </Table>
-              </div>
-            </Card>
-          )}
-          </>)}
-        </div>
-      )}
-
-      {/* Cross-Screen Overlap Matrix */}
-      {screens.length >= 2 && (
-        <div className="space-y-3">
-          <div
-            className="flex items-center cursor-pointer select-none gap-2"
-            onClick={() => setOverlapOpen((o) => !o)}
-          >
-            <h2 className="text-lg font-semibold flex items-center gap-2">
-              <FileSearch className="h-5 w-5" />
-              Cross-Screen Overlap
-              <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${overlapOpen ? "rotate-180" : ""}`} />
-            </h2>
-          </div>
-          {overlapOpen && (
-            <ScreenOverlapMatrix runs={runs} screens={screens} entries={entries} onQuickAdd={(sym) => { setAddPrefill(sym); setAddOpen(true); }} />
-          )}
-        </div>
-      )}
-
       {/* Alerts Section */}
       {(activeAlerts.length > 0 || triggeredAlerts.length > 0) && (
         <div className="space-y-3">
@@ -1038,360 +829,6 @@ export default function Watchlist() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* Delete screen confirmation */}
-      <AlertDialog open={!!deleteScreenConfirm} onOpenChange={(o) => !o && setDeleteScreenConfirm(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete screen "{deleteScreenConfirm?.name}"?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete the screen, all its runs, and remove any auto-generated tags from your watchlist entries. This cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={async () => {
-                if (deleteScreenConfirm) {
-                  await deleteScreen(deleteScreenConfirm.id);
-                  if (historyFilter === deleteScreenConfirm.id) setHistoryFilter("all");
-                  setDeleteScreenConfirm(null);
-                  await refetchWatchlist();
-                }
-              }}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
-  );
-}
-
-/* ── Cross-Screen Overlap Matrix ── */
-function ScreenOverlapMatrix({
-  runs,
-  screens,
-  entries,
-  onQuickAdd,
-}: {
-  runs: ReturnType<typeof import("@/hooks/use-screens").useScreens>["runs"];
-  screens: ReturnType<typeof import("@/hooks/use-screens").useScreens>["screens"];
-  entries: WatchlistEntry[];
-  onQuickAdd: (symbol: string) => void;
-}) {
-  const [selectedPair, setSelectedPair] = useState<[number, number] | null>(null);
-
-  const watchlistSymbolSet = useMemo(() => new Set(entries.map((e) => e.symbol.toUpperCase())), [entries]);
-
-  // Get the latest run per screen
-  const latestByScreen = useMemo(() => {
-    const map = new Map<string, typeof runs[number]>();
-    for (const run of runs) {
-      const existing = map.get(run.screen_id);
-      if (!existing || new Date(run.created_at) > new Date(existing.created_at)) {
-        map.set(run.screen_id, run);
-      }
-    }
-    return Array.from(map.values()).sort((a, b) =>
-      (a.screen?.name ?? "").localeCompare(b.screen?.name ?? "")
-    );
-  }, [runs]);
-
-  const getSymbols = (r: typeof runs[number]) => {
-    const all = r.all_symbols ?? [];
-    return all.length > 0 ? all : (r.matched_symbols ?? []);
-  };
-
-  const overlapSymbols = (a: typeof runs[number], b: typeof runs[number]) => {
-    const setA = new Set(getSymbols(a).map((s) => s.toUpperCase()));
-    return getSymbols(b).filter((s) => setA.has(s.toUpperCase())).map((s) => s.toUpperCase());
-  };
-
-  const overlap = (a: typeof runs[number], b: typeof runs[number]) => overlapSymbols(a, b).length;
-
-  // Selected pair symbols
-  const pairSymbols = useMemo(() => {
-    if (!selectedPair) return [];
-    const [i, j] = selectedPair;
-    return [...new Set(overlapSymbols(latestByScreen[i], latestByScreen[j]))].sort();
-  }, [selectedPair, latestByScreen]);
-
-  // Cross-screen symbols: symbols in 2+ screens
-  const crossScreenData = useMemo(() => {
-    const symbolScreens = new Map<string, Set<number>>();
-    latestByScreen.forEach((run, idx) => {
-      for (const sym of getSymbols(run)) {
-        const upper = sym.toUpperCase();
-        if (!symbolScreens.has(upper)) symbolScreens.set(upper, new Set());
-        symbolScreens.get(upper)!.add(idx);
-      }
-    });
-    const results: { symbol: string; screenIndices: number[] }[] = [];
-    for (const [symbol, indices] of symbolScreens) {
-      if (indices.size >= 2) {
-        results.push({ symbol, screenIndices: Array.from(indices).sort() });
-      }
-    }
-    results.sort((a, b) => b.screenIndices.length - a.screenIndices.length || a.symbol.localeCompare(b.symbol));
-    return results;
-  }, [latestByScreen]);
-
-  const totalUniqueSymbols = useMemo(() => {
-    const all = new Set<string>();
-    latestByScreen.forEach((run) => getSymbols(run).forEach((s) => all.add(s.toUpperCase())));
-    return all.size;
-  }, [latestByScreen]);
-
-  // Watchlist matches: watchlist symbols that appear in any screen
-  const watchlistMatches = useMemo(() => {
-    const symbolScreens = new Map<string, number[]>();
-    latestByScreen.forEach((run, idx) => {
-      for (const sym of getSymbols(run)) {
-        const upper = sym.toUpperCase();
-        if (watchlistSymbolSet.has(upper)) {
-          if (!symbolScreens.has(upper)) symbolScreens.set(upper, []);
-          if (!symbolScreens.get(upper)!.includes(idx)) symbolScreens.get(upper)!.push(idx);
-        }
-      }
-    });
-    return Array.from(symbolScreens.entries())
-      .map(([symbol, indices]) => ({ symbol, screenIndices: indices.sort() }))
-      .sort((a, b) => b.screenIndices.length - a.screenIndices.length || a.symbol.localeCompare(b.symbol));
-  }, [latestByScreen, watchlistSymbolSet]);
-
-  const handleQuickAdd = (symbol: string) => {
-    onQuickAdd(symbol);
-  };
-
-  if (latestByScreen.length < 2) return null;
-
-  const SCREEN_COLORS = ["#5865F2", "#57F287", "#FEE75C", "#ED4245", "#EB459E", "#9B59B6", "#3498DB", "#E67E22"];
-
-  return (
-    <div className="space-y-4">
-      <h2 className="text-lg font-semibold">Cross-Screen Overlap</h2>
-      <p className="text-sm text-muted-foreground">
-        Pairwise symbol overlap between the latest run of each screen. Click a cell to see the overlapping symbols.
-      </p>
-
-      {/* Matrix */}
-      <Card>
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="min-w-[120px]" />
-                {latestByScreen.map((r, idx) => (
-                  <TableHead key={r.id} className="text-center text-xs whitespace-nowrap">
-                    <div className="flex items-center justify-center gap-1">
-                      <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: SCREEN_COLORS[idx % SCREEN_COLORS.length] }} />
-                      {r.screen?.name ?? r.screen_id.slice(0, 6)}
-                    </div>
-                    <div className="text-[10px] text-muted-foreground font-normal">
-                      {new Date(r.run_date).toLocaleDateString()}
-                    </div>
-                  </TableHead>
-                ))}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {latestByScreen.map((row, ri) => (
-                <TableRow key={row.id}>
-                  <TableCell className="font-medium text-sm whitespace-nowrap">
-                    <div className="flex items-center gap-1.5">
-                      <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: SCREEN_COLORS[ri % SCREEN_COLORS.length] }} />
-                      {row.screen?.name ?? row.screen_id.slice(0, 6)}
-                      <span className="text-muted-foreground text-xs">({getSymbols(row).length})</span>
-                    </div>
-                  </TableCell>
-                  {latestByScreen.map((col, ci) => {
-                    const count = ri === ci ? getSymbols(row).length : overlap(row, col);
-                    const isDiag = ri === ci;
-                    const isSelected = selectedPair && ((selectedPair[0] === ri && selectedPair[1] === ci) || (selectedPair[0] === ci && selectedPair[1] === ri));
-                    const maxPossible = Math.min(getSymbols(row).length, getSymbols(col).length);
-                    const intensity = !isDiag && maxPossible > 0 ? count / maxPossible : 0;
-                    return (
-                      <TableCell
-                        key={col.id}
-                        className={`text-center text-sm tabular-nums ${isDiag ? "bg-muted font-medium" : "cursor-pointer hover:ring-2 hover:ring-primary/50"} ${isSelected ? "ring-2 ring-primary" : ""}`}
-                        style={
-                          !isDiag && intensity > 0
-                            ? { backgroundColor: `hsl(var(--primary) / ${(intensity * 0.3 + 0.05).toFixed(2)})` }
-                            : undefined
-                        }
-                        onClick={() => {
-                          if (!isDiag) {
-                            const pair: [number, number] = ri < ci ? [ri, ci] : [ci, ri];
-                            setSelectedPair((prev) =>
-                              prev && prev[0] === pair[0] && prev[1] === pair[1] ? null : pair
-                            );
-                          }
-                        }}
-                      >
-                        {count}
-                      </TableCell>
-                    );
-                  })}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-
-        {/* Expanded pair overlap */}
-        {selectedPair && pairSymbols.length > 0 && (
-          <div className="border-t p-4 space-y-2">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <span>Overlap between</span>
-              <Badge variant="secondary" className="text-xs" style={{ backgroundColor: `${SCREEN_COLORS[selectedPair[0] % SCREEN_COLORS.length]}30`, color: SCREEN_COLORS[selectedPair[0] % SCREEN_COLORS.length] }}>
-                {latestByScreen[selectedPair[0]].screen?.name}
-              </Badge>
-              <span>&</span>
-              <Badge variant="secondary" className="text-xs" style={{ backgroundColor: `${SCREEN_COLORS[selectedPair[1] % SCREEN_COLORS.length]}30`, color: SCREEN_COLORS[selectedPair[1] % SCREEN_COLORS.length] }}>
-                {latestByScreen[selectedPair[1]].screen?.name}
-              </Badge>
-              <span className="text-muted-foreground">— {pairSymbols.length} symbols</span>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {pairSymbols.map((sym) => {
-                const inWatchlist = watchlistSymbolSet.has(sym);
-                return (
-                  <div key={sym} className="flex items-center gap-0.5">
-                    <Badge variant={inWatchlist ? "default" : "outline"} className="text-xs">
-                      {sym}
-                      {inWatchlist && <span className="ml-1">✓</span>}
-                    </Badge>
-                    {!inWatchlist && (
-                      <Button
-                        variant="ghost" size="sm" className="h-5 w-5 p-0"
-                        
-                        onClick={() => handleQuickAdd(sym)}
-                        title={`Add ${sym} to watchlist`}
-                      >
-                        <Plus className="h-3 w-3" />
-                      </Button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </Card>
-
-      {/* Cross-Screen Matches Table */}
-      {crossScreenData.length > 0 && (
-        <Card>
-          <div className="p-4 pb-2">
-            <h3 className="text-sm font-semibold">Symbols in Multiple Screens</h3>
-            <p className="text-xs text-muted-foreground">
-              {crossScreenData.length} symbols appear in 2+ screens out of {totalUniqueSymbols} unique symbols.
-            </p>
-          </div>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Symbol</TableHead>
-                  <TableHead>Screens</TableHead>
-                  <TableHead className="w-24">Watchlist</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {crossScreenData.map(({ symbol, screenIndices }) => {
-                  const inWatchlist = watchlistSymbolSet.has(symbol);
-                  return (
-                    <TableRow key={symbol}>
-                      <TableCell className="font-medium text-sm">{symbol}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-sm text-muted-foreground">{screenIndices.length}×</span>
-                          {screenIndices.map((idx) => (
-                            <span
-                              key={idx}
-                              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
-                              style={{
-                                backgroundColor: `${SCREEN_COLORS[idx % SCREEN_COLORS.length]}20`,
-                                color: SCREEN_COLORS[idx % SCREEN_COLORS.length],
-                              }}
-                            >
-                              <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: SCREEN_COLORS[idx % SCREEN_COLORS.length] }} />
-                              {latestByScreen[idx].screen?.name ?? "?"}
-                            </span>
-                          ))}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {inWatchlist ? (
-                          <span className="text-emerald-600 dark:text-emerald-400 text-sm">✓</span>
-                        ) : (
-                          <Button
-                            variant="ghost" size="sm" className="h-6 px-2 text-xs"
-                            
-                            onClick={() => handleQuickAdd(symbol)}
-                          >
-                            <Plus className="h-3 w-3 mr-1" />
-                            Add
-                          </Button>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
-        </Card>
-      )}
-
-      {/* Watchlist Matches Table */}
-      {watchlistMatches.length > 0 && (
-        <Card>
-          <div className="p-4 pb-2">
-            <h3 className="text-sm font-semibold">Watchlist Matches</h3>
-            <p className="text-xs text-muted-foreground">
-              {watchlistMatches.length} watchlist symbols found across uploaded screens.
-            </p>
-          </div>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Symbol</TableHead>
-                  <TableHead>Screens</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {watchlistMatches.map(({ symbol, screenIndices }) => (
-                  <TableRow key={symbol}>
-                    <TableCell className="font-medium text-sm">{symbol}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1.5">
-                        {screenIndices.map((idx) => (
-                          <span
-                            key={idx}
-                            className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
-                            style={{
-                              backgroundColor: `${SCREEN_COLORS[idx % SCREEN_COLORS.length]}20`,
-                              color: SCREEN_COLORS[idx % SCREEN_COLORS.length],
-                            }}
-                          >
-                            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: SCREEN_COLORS[idx % SCREEN_COLORS.length] }} />
-                            {latestByScreen[idx].screen?.name ?? "?"}
-                          </span>
-                        ))}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </Card>
-      )}
     </div>
   );
 }
