@@ -61,30 +61,34 @@ Deno.serve(async (req) => {
 
       const symbols = [...new Set(userAlerts.map((a: any) => a.symbol))];
 
-      // Fetch quotes in batches of 50
+      // Fetch prices via /stable/profile (quote-short endpoints are restricted on this plan)
       const quotes = new Map<string, number>();
-      for (let i = 0; i < symbols.length; i += 50) {
-        const batch = symbols.slice(i, i + 50);
+      for (const sym of symbols) {
         try {
-          const res = await fetch(
-            `${FMP_BASE}/batch-quote-short?symbols=${batch.join(",")}&apikey=${fmpApiKey}`
-          );
+          const url = `${FMP_BASE}/profile?symbol=${sym}&apikey=${fmpApiKey}`;
+          console.log(`[FMP] Fetching profile for ${sym}`);
+          const res = await fetch(url);
+          const rawText = await res.text();
+          console.log(`[FMP] ${sym} Status: ${res.status}, Response: ${rawText.substring(0, 300)}`);
           if (!res.ok) continue;
-          const data = await res.json();
-          if (Array.isArray(data)) {
-            for (const q of data) {
-              quotes.set(q.symbol, q.price ?? 0);
-            }
+          const data = JSON.parse(rawText);
+          if (Array.isArray(data) && data.length > 0) {
+            quotes.set(data[0].symbol, data[0].price ?? 0);
+            console.log(`[FMP] ${sym} price: ${data[0].price}`);
           }
-        } catch {
-          // continue
+        } catch (fetchErr) {
+          console.error(`[FMP] Fetch error for ${sym}:`, fetchErr);
         }
       }
 
       // Check each alert
       for (const alert of userAlerts) {
         const currentPrice = quotes.get(alert.symbol);
-        if (currentPrice == null || currentPrice === 0) continue;
+        console.log(`[ALERT] ${alert.symbol}: type=${alert.alert_type}, target=${alert.target_value}, currentPrice=${currentPrice}, refPrice=${alert.reference_price}`);
+        if (currentPrice == null || currentPrice === 0) {
+          console.log(`[ALERT] ${alert.symbol}: Skipping - no price available`);
+          continue;
+        }
 
         let triggered = false;
         switch (alert.alert_type) {
@@ -105,6 +109,7 @@ Deno.serve(async (req) => {
             }
             break;
         }
+        console.log(`[ALERT] ${alert.symbol}: triggered=${triggered} (${currentPrice} ${alert.alert_type === 'PRICE_BELOW' ? '<=' : '>='} ${alert.target_value})`);
 
         if (triggered) {
           totalTriggered++;
