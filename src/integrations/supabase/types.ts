@@ -82,7 +82,7 @@ export type Database = {
           shares: number | null
           source: string | null
           symbol: string
-          tier: Database["public"]["Enums"]["position_tier"] | null
+          tier: string | null
           updated_at: string
           user_id: string
         }
@@ -102,7 +102,7 @@ export type Database = {
           shares?: number | null
           source?: string | null
           symbol: string
-          tier?: Database["public"]["Enums"]["position_tier"] | null
+          tier?: string | null
           updated_at?: string
           user_id: string
         }
@@ -122,7 +122,7 @@ export type Database = {
           shares?: number | null
           source?: string | null
           symbol?: string
-          tier?: Database["public"]["Enums"]["position_tier"] | null
+          tier?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -420,7 +420,6 @@ export type Database = {
         | "PCT_CHANGE_UP"
         | "PCT_CHANGE_DOWN"
       position_category: "CORE" | "TITAN" | "CONSENSUS"
-      position_tier: "C1" | "C2" | "C3" | "TT" | "CON"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -555,7 +554,6 @@ export const Constants = {
         "PCT_CHANGE_DOWN",
       ],
       position_category: ["CORE", "TITAN", "CONSENSUS"],
-      position_tier: ["C1", "C2", "C3", "TT", "CON"],
     },
   },
 } as const

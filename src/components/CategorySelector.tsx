@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import type { Database } from "@/integrations/supabase/types";
 
 type Category = Database["public"]["Enums"]["position_category"] | null;
-type Tier = Database["public"]["Enums"]["position_tier"] | null;
+type Tier = string | null;
 
 const TIER_MAP: Record<string, { value: string; label: string }[]> = {
   CORE: [
@@ -56,8 +56,7 @@ export function CategorySelector({ positionId, category, tier, onUpdate }: Categ
     }
     const newCat = val as Category;
     const tiers = TIER_MAP[val];
-    // Auto-assign tier if only one option
-    const newTier = tiers?.length === 1 ? (tiers[0].value as Tier) : null;
+    const newTier = tiers?.length === 1 ? tiers[0].value : null;
     updateField(newCat, newTier);
   };
 
@@ -66,7 +65,7 @@ export function CategorySelector({ positionId, category, tier, onUpdate }: Categ
       updateField(category, null);
       return;
     }
-    updateField(category, val as Tier);
+    updateField(category, val);
   };
 
   const tierOptions = category ? TIER_MAP[category] ?? [] : [];
