@@ -448,17 +448,27 @@ export default function Watchlist() {
       ) : (
         <Card>
           <div className="overflow-x-auto">
-            <Table>
+            <Table className="table-fixed">
+              <colgroup>
+                <col className="w-[7%]" />   {/* Symbol */}
+                <col className="w-[20%]" />  {/* Company */}
+                <col className="w-[11%]" />  {/* Price */}
+                <col className="w-[12%]" />  {/* Day Chg % */}
+                <col className="w-[13%]" />  {/* Since Added % */}
+                <col className="w-[10%]" />  {/* Mkt Cap */}
+                <col className="w-[20%]" />  {/* Tags */}
+                <col className="w-[7%]" />   {/* Alert icon */}
+              </colgroup>
               <TableHeader>
                 <TableRow>
-                  <SortHeader label="Symbol" sortKey="symbol" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="w-24 whitespace-nowrap" />
-                  <TableHead className="min-w-[140px]">Company</TableHead>
-                  <SortHeader label="Price" sortKey="price" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="text-right whitespace-nowrap w-28" />
-                  <SortHeader label="Day Chg %" sortKey="dayChg" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="text-right whitespace-nowrap w-28" />
-                  <SortHeader label="Since Added %" sortKey="sinceAdded" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="text-right whitespace-nowrap w-32" />
-                  <SortHeader label="Mkt Cap" sortKey="marketCap" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="whitespace-nowrap w-24" />
-                  <TableHead className="min-w-[100px]">Tags</TableHead>
-                  <TableHead className="w-10"></TableHead>
+                  <SortHeader label="Symbol" sortKey="symbol" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="whitespace-nowrap" />
+                  <TableHead>Company</TableHead>
+                  <SortHeader label="Price" sortKey="price" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="text-right whitespace-nowrap" />
+                  <SortHeader label="Day Chg %" sortKey="dayChg" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="text-right whitespace-nowrap" />
+                  <SortHeader label="Since Added %" sortKey="sinceAdded" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="text-right whitespace-nowrap" />
+                  <SortHeader label="Mkt Cap" sortKey="marketCap" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="whitespace-nowrap" />
+                  <TableHead>Tags</TableHead>
+                  <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -479,7 +489,7 @@ export default function Watchlist() {
                         onClick={() => setExpandedId(isExpanded ? null : entry.id)}
                       >
                         <TableCell className="font-medium whitespace-nowrap">{entry.symbol}</TableCell>
-                        <TableCell className="text-muted-foreground truncate max-w-[200px]">{entry.company_name ?? "—"}</TableCell>
+                        <TableCell className="text-muted-foreground truncate overflow-hidden">{entry.company_name ?? "—"}</TableCell>
                         <TableCell className="text-right tabular-nums whitespace-nowrap">{fmtPrice(entry.current_price)}</TableCell>
                         <TableCell className={`text-right tabular-nums whitespace-nowrap ${pctColor(dayChg)}`}>
                           {dayChg != null ? fmtPct(dayChg) : "—"}
@@ -495,7 +505,7 @@ export default function Watchlist() {
                           ) : "—"}
                         </TableCell>
                         <TableCell>
-                          <div className="flex flex-wrap gap-1 max-w-[180px]">
+                          <div className="flex flex-wrap gap-1">
                             {entryTags.map((tag) => (
                               <span
                                 key={tag.id}
