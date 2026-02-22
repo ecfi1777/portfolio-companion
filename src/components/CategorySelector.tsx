@@ -21,9 +21,10 @@ interface CategorySelectorProps {
   category: Category;
   tier: Tier;
   onUpdate: (category: Category, tier: Tier) => void;
+  tierCounts?: Record<string, number>;
 }
 
-export function CategorySelector({ positionId, category, tier, onUpdate }: CategorySelectorProps) {
+export function CategorySelector({ positionId, category, tier, onUpdate, tierCounts = {} }: CategorySelectorProps) {
   const { toast } = useToast();
   const { settings } = usePortfolioSettings();
   const [saving, setSaving] = useState(false);
@@ -81,11 +82,20 @@ export function CategorySelector({ positionId, category, tier, onUpdate }: Categ
           {settings.categories.map((cat) => (
             <SelectGroup key={cat.key}>
               <SelectLabel className="text-xs text-muted-foreground">{cat.display_name}</SelectLabel>
-              {cat.tiers.map((t) => (
-                <SelectItem key={t.key} value={t.key}>
-                  {t.name}
-                </SelectItem>
-              ))}
+              {cat.tiers.map((t) => {
+                const count = tierCounts[t.key] ?? 0;
+                const isFull = count >= t.max_positions && t.key !== tier;
+                return (
+                  <SelectItem key={t.key} value={t.key} disabled={isFull}>
+                    <span className={isFull ? "text-muted-foreground" : ""}>
+                      {t.name}
+                      <span className="ml-1.5 text-[10px] text-muted-foreground">
+                        {count}/{t.max_positions}
+                      </span>
+                    </span>
+                  </SelectItem>
+                );
+              })}
             </SelectGroup>
           ))}
           <SelectItem value="__clear__" className="text-muted-foreground">Clear</SelectItem>

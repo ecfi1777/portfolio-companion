@@ -93,11 +93,13 @@ function PositionDetailPanel({
   onUpdate,
   onDelete,
   onCategoryUpdate,
+  tierCounts,
 }: {
   position: Position;
   onUpdate: (updates: Partial<Position>) => void;
   onDelete: () => void;
   onCategoryUpdate: (cat: Category, tier: Tier) => void;
+  tierCounts: Record<string, number>;
 }) {
   const { toast } = useToast();
   const [notes, setNotes] = useState(position.notes ?? "");
@@ -179,6 +181,7 @@ function PositionDetailPanel({
             category={position.category}
             tier={position.tier}
             onUpdate={onCategoryUpdate}
+            tierCounts={tierCounts}
           />
         </div>
         <div className="ml-auto">
@@ -253,6 +256,13 @@ export default function Portfolio() {
 
   const CATEGORY_COLORS = useMemo(() => getCategoryColors(settings), [settings]);
   const tierOrder = useMemo(() => buildTierOrder(settings), [settings]);
+  const tierCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const p of stockPositions) {
+      if (p.tier) counts[p.tier] = (counts[p.tier] ?? 0) + 1;
+    }
+    return counts;
+  }, [stockPositions]);
 
   // Category breakdown — driven by settings
   const categoryBreakdown = useMemo(() => {
@@ -646,6 +656,7 @@ export default function Portfolio() {
                               category={p.category}
                               tier={p.tier}
                               onUpdate={(cat, tier) => handleCategoryUpdate(p.id, cat, tier)}
+                              tierCounts={tierCounts}
                             />
                           )}
                         </TableCell>
@@ -677,6 +688,7 @@ export default function Portfolio() {
                                 toast({ title: `${p.symbol} removed from portfolio` });
                               }}
                               onCategoryUpdate={(cat, tier) => handleCategoryUpdate(p.id, cat, tier)}
+                              tierCounts={tierCounts}
                             />
                           </TableCell>
                         </TableRow>
