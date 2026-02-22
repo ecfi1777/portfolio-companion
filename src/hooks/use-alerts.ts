@@ -59,7 +59,7 @@ export function useAlerts() {
         target_value: data.target_value,
         reference_price: data.reference_price ?? null,
         notify_time: data.notify_time ?? null,
-      } as any);
+      });
 
       if (error) {
         if (error.code === "23505") {
@@ -82,7 +82,7 @@ export function useAlerts() {
   const updateAlert = useCallback(
     async (id: string, data: Partial<Pick<PriceAlert, "target_value" | "alert_type" | "reference_price" | "is_active">>) => {
       if (!user) return;
-      await supabase.from("price_alerts").update(data as any).eq("id", id);
+      await supabase.from("price_alerts").update(data).eq("id", id);
       await fetchAlerts();
     },
     [user, fetchAlerts]
@@ -108,7 +108,7 @@ export function useAlerts() {
       if (!user) return;
       await supabase
         .from("price_alerts")
-        .update({ acknowledged_at: new Date().toISOString() } as any)
+        .update({ acknowledged_at: new Date().toISOString() })
         .eq("id", id);
       await fetchAlerts();
     },
@@ -122,7 +122,7 @@ export function useAlerts() {
       if (unacked.length === 0) return;
       await supabase
         .from("price_alerts")
-        .update({ acknowledged_at: new Date().toISOString() } as any)
+        .update({ acknowledged_at: new Date().toISOString() })
         .in("id", unacked.map((a) => a.id));
       await fetchAlerts();
     },

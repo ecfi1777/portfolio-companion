@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Upload, FileText, Check, AlertTriangle, Plus, Info, CirclePlus, RefreshCw, Minus } from "lucide-react";
-import type { Tables } from "@/integrations/supabase/types";
+import type { Tables, Json } from "@/integrations/supabase/types";
 
 const fmt = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -172,7 +172,7 @@ export function UpdatePortfolioModal({ open, onOpenChange, onSuccess }: UpdatePo
               current_price: p.currentPrice,
               current_value: p.currentValue,
               cost_basis: p.costBasis,
-              account: p.accounts as any,
+              account: p.accounts as unknown as Json,
             },
             { onConflict: "user_id,symbol" }
           );
@@ -192,7 +192,7 @@ export function UpdatePortfolioModal({ open, onOpenChange, onSuccess }: UpdatePo
               current_price: 1,
               current_value: parseResult.cashBalance,
               cost_basis: parseResult.cashBalance,
-              account: (parseResult.cashAccounts ?? []) as any,
+              account: (parseResult.cashAccounts ?? []) as unknown as Json,
             },
             { onConflict: "user_id,symbol" }
           );

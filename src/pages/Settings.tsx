@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { usePortfolioSettings, DEFAULT_SETTINGS, getPerPositionTarget, type PortfolioSettings, type CategoryConfig, type TierConfig } from "@/hooks/use-portfolio-settings";
+import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { RotateCcw, Save, Eye, EyeOff, Key, Mail, Check, Plus, Trash2 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -25,11 +26,11 @@ export default function Settings() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await (await import("@/integrations/supabase/client")).supabase
+      const { data } = await supabase
         .from("positions")
         .select("current_value");
       if (data) {
-        const total = data.reduce((sum: number, p: any) => sum + (p.current_value ?? 0), 0);
+        const total = data.reduce((sum, p) => sum + (p.current_value ?? 0), 0);
         setPortfolioTotal(total);
       }
     })();
