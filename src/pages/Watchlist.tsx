@@ -1,4 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,7 +21,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Eye, Plus, Settings, Search, Bell, BellRing, ChevronDown, ChevronUp, ArrowUpDown, Trash2, X, Tag as TagIcon, RefreshCw, AlertTriangle, Clock,
+  Eye, Plus, Settings, Search, Bell, BellRing, ChevronDown, ChevronUp, ArrowUpDown, Trash2, X, Tag as TagIcon, RefreshCw, AlertTriangle, Clock, Flame,
 } from "lucide-react";
 import { useWatchlist, type WatchlistEntry } from "@/hooks/use-watchlist";
 import { usePortfolioSettings } from "@/hooks/use-portfolio-settings";
@@ -70,7 +72,22 @@ function pctColor(v: number | null) {
   return v >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400";
 }
 
-type SortKey = "symbol" | "price" | "dayChg" | "sinceAdded" | "marketCap" | "dateAdded";
+type SortKey = "symbol" | "price" | "dayChg" | "sinceAdded" | "marketCap" | "dateAdded" | "heat";
+
+/* ── Screen hit types ── */
+type ScreenHit = {
+  symbol: string;
+  screen_name: string;
+  screen_short_code: string;
+  screen_id: string;
+  screen_color: string | null;
+  heat_score: number;
+};
+
+type SymbolScreenData = {
+  screens: { name: string; short_code: string; color: string | null }[];
+  heat_score: number;
+};
 type SortDir = "asc" | "desc";
 type PerfFilter = "all" | "gainers" | "losers";
 
@@ -154,6 +171,7 @@ function SortHeader({
 
 /* ── Main Component ── */
 export default function Watchlist() {
+  const { user } = useAuth();
   const {
     entries, tags, loading, addEntry, deleteEntry, updateEntryNotes,
     addEntryTag, removeEntryTag, createTag, updateTag, deleteTag, refreshPrices, refetch: refetchWatchlist,
@@ -161,6 +179,24 @@ export default function Watchlist() {
   const { settings } = usePortfolioSettings();
   const { activeAlerts, triggeredAlerts, createAlert, deleteAlert, getAlertsForEntry, refetch: refetchAlerts } = useAlerts();
   const fmpApiKey = settings.fmp_api_key;
+
+  // Screen hits
+  const [screenHitsMap, setScreenHitsMap] = useState<Record<string, SymbolScreenData>>({});
+  const [screenedFilter, setScreenedFilter] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    supabase.rpc("get_screen_hits_for_user").then(({ data, error }) => {
+      if (error || !data) return;
+      const map: Record<string, SymbolScreenData> = {};
+      for (const row of data as ScreenHit[]) {
+        const sym = row.symbol.toUpperCase();
+        if (!map[sym]) map[sym] = { screens: [], heat_score: row.heat_score };
+        map[sym].screens.push({ name: row.screen_name, short_code: row.screen_short_code, color: row.screen_color });
+      }
+      setScreenHitsMap(map);
+    });
+  }, [user]);
   const [refreshing, setRefreshing] = useState(false);
   const [alertTab, setAlertTab] = useState<string>("watchlist");
 
@@ -252,6 +288,10 @@ export default function Watchlist() {
       });
     }
 
+    if (screenedFilter) {
+      result = result.filter((e) => !!screenHitsMap[e.symbol.toUpperCase()]);
+    }
+
     const sorted = [...result].sort((a, b) => {
       let cmp = 0;
       switch (sortKey) {
@@ -261,20 +301,22 @@ export default function Watchlist() {
         case "sinceAdded": cmp = (calcSinceAdded(a) ?? -Infinity) - (calcSinceAdded(b) ?? -Infinity); break;
         case "marketCap": cmp = (a.market_cap ?? 0) - (b.market_cap ?? 0); break;
         case "dateAdded": cmp = new Date(a.date_added).getTime() - new Date(b.date_added).getTime(); break;
+        case "heat": cmp = (screenHitsMap[a.symbol.toUpperCase()]?.heat_score ?? 0) - (screenHitsMap[b.symbol.toUpperCase()]?.heat_score ?? 0); break;
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
 
     return sorted;
-  }, [entries, search, selectedTags, selectedCaps, selectedSectors, perfFilter, sortKey, sortDir]);
+  }, [entries, search, selectedTags, selectedCaps, selectedSectors, perfFilter, screenedFilter, screenHitsMap, sortKey, sortDir]);
 
-  const activeFilters = selectedTags.size + selectedCaps.size + selectedSectors.size + (perfFilter !== "all" ? 1 : 0);
+  const activeFilters = selectedTags.size + selectedCaps.size + selectedSectors.size + (perfFilter !== "all" ? 1 : 0) + (screenedFilter ? 1 : 0);
 
   const clearFilters = () => {
     setSelectedTags(new Set());
     setSelectedCaps(new Set());
     setSelectedSectors(new Set());
     setPerfFilter("all");
+    setScreenedFilter(false);
   };
 
   const handleNotesBlur = async (entryId: string) => {
@@ -428,6 +470,19 @@ export default function Watchlist() {
           ))}
         </div>
 
+        {/* Screened filter toggle */}
+        {Object.keys(screenHitsMap).length > 0 && (
+          <Button
+            variant={screenedFilter ? "default" : "outline"}
+            size="sm"
+            className="h-8 gap-1 text-xs"
+            onClick={() => setScreenedFilter((f) => !f)}
+          >
+            <Flame className="h-3 w-3" />
+            Screened
+          </Button>
+        )}
+
         {activeFilters > 0 && (
           <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={clearFilters}>
             Clear filters
@@ -454,23 +509,25 @@ export default function Watchlist() {
             <Table className="table-fixed">
               <colgroup>
                 <col className="w-[7%]" />   {/* Symbol */}
-                <col className="w-[20%]" />  {/* Company */}
-                <col className="w-[11%]" />  {/* Price */}
-                <col className="w-[12%]" />  {/* Day Chg % */}
-                <col className="w-[13%]" />  {/* Since Added % */}
-                <col className="w-[10%]" />  {/* Mkt Cap */}
-                <col className="w-[20%]" />  {/* Tags */}
-                <col className="w-[7%]" />   {/* Alert icon */}
+                <col className="w-[17%]" />  {/* Company */}
+                <col className="w-[9%]" />   {/* Price */}
+                <col className="w-[10%]" />  {/* Day Chg % */}
+                <col className="w-[11%]" />  {/* Since Added % */}
+                <col className="w-[8%]" />   {/* Mkt Cap */}
+                <col className="w-[15%]" />  {/* Tags */}
+                <col className="w-[17%]" />  {/* Screens */}
+                <col className="w-[6%]" />   {/* Alert icon */}
               </colgroup>
               <TableHeader>
                 <TableRow>
                   <SortHeader label="Symbol" sortKey="symbol" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="whitespace-nowrap" />
                   <TableHead>Company</TableHead>
                   <SortHeader label="Price" sortKey="price" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="text-right whitespace-nowrap" />
-                  <SortHeader label="Day Chg %" sortKey="dayChg" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="text-right whitespace-nowrap" />
-                  <SortHeader label="Since Added %" sortKey="sinceAdded" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="text-right whitespace-nowrap" />
+                  <SortHeader label="Day %" sortKey="dayChg" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="text-right whitespace-nowrap" />
+                  <SortHeader label="Since Add %" sortKey="sinceAdded" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="text-right whitespace-nowrap" />
                   <SortHeader label="Mkt Cap" sortKey="marketCap" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="text-center whitespace-nowrap" />
                   <TableHead>Tags</TableHead>
+                  <SortHeader label="Screens" sortKey="heat" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="whitespace-nowrap" />
                   <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
@@ -484,6 +541,7 @@ export default function Watchlist() {
                   const entryAlerts = getAlertsForEntry(entry.id);
                   const hasActiveAlert = entryAlerts.some((a) => a.is_active);
                   const hasTriggeredUnacked = entryAlerts.some((a) => a.triggered_at != null && a.acknowledged_at == null);
+                  const screenData = screenHitsMap[entry.symbol.toUpperCase()];
 
                   return (
                     <React.Fragment key={entry.id}>
@@ -525,6 +583,32 @@ export default function Watchlist() {
                           </div>
                         </TableCell>
                         <TableCell>
+                          {screenData ? (
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {screenData.screens.map((s, i) => (
+                                <span
+                                  key={i}
+                                  className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium border"
+                                  style={{
+                                    backgroundColor: s.color ? `${s.color}20` : undefined,
+                                    color: s.color ?? undefined,
+                                    borderColor: s.color ? `${s.color}40` : undefined,
+                                  }}
+                                >
+                                  {s.short_code}
+                                </span>
+                              ))}
+                              {screenData.heat_score >= 2 && (
+                                <span className="text-[10px] text-muted-foreground" title={`Heat score: ${screenData.heat_score}`}>
+                                  {"🔥".repeat(Math.min(screenData.heat_score, 5))}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground/30 text-xs">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
                           {hasTriggeredUnacked ? (
                             <BellRing className="h-4 w-4 text-amber-500 fill-amber-500" />
                           ) : hasActiveAlert ? (
@@ -538,7 +622,7 @@ export default function Watchlist() {
                       {/* Expanded row */}
                       {isExpanded && (
                         <TableRow className="bg-muted/30 hover:bg-muted/30">
-                          <TableCell colSpan={8} className="p-0">
+                          <TableCell colSpan={9} className="p-0">
                             <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-6" onClick={(e) => e.stopPropagation()}>
                               {/* Price details */}
                               <div className="space-y-2">
@@ -707,7 +791,7 @@ export default function Watchlist() {
                 })}
                 {processed.length === 0 && entries.length > 0 && (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                       No results matching your filters
                     </TableCell>
                   </TableRow>
