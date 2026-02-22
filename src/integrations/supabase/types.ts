@@ -249,6 +249,7 @@ export type Database = {
       }
       screens: {
         Row: {
+          color: string | null
           created_at: string
           id: string
           name: string
@@ -256,6 +257,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          color?: string | null
           created_at?: string
           id?: string
           name: string
@@ -263,6 +265,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          color?: string | null
           created_at?: string
           id?: string
           name?: string
@@ -411,7 +414,17 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_screen_hits_for_user: {
+        Args: never
+        Returns: {
+          heat_score: number
+          screen_color: string
+          screen_id: string
+          screen_name: string
+          screen_short_code: string
+          symbol: string
+        }[]
+      }
     }
     Enums: {
       alert_type:
