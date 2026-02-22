@@ -136,9 +136,11 @@ function SortHeader({
   className?: string;
 }) {
   const active = currentKey === sortKey;
+  const isRight = className?.includes("text-right");
+  const isCenter = className?.includes("text-center");
   return (
     <TableHead className={`cursor-pointer select-none group ${className ?? ""}`} onClick={() => onSort(sortKey)}>
-      <div className="flex items-center gap-1">
+      <div className={`flex items-center gap-1 ${isRight ? "justify-end" : isCenter ? "justify-center" : ""}`}>
         {label}
         {active ? (
           currentDir === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
@@ -466,7 +468,7 @@ export default function Watchlist() {
                   <SortHeader label="Price" sortKey="price" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="text-right whitespace-nowrap" />
                   <SortHeader label="Day Chg %" sortKey="dayChg" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="text-right whitespace-nowrap" />
                   <SortHeader label="Since Added %" sortKey="sinceAdded" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="text-right whitespace-nowrap" />
-                  <SortHeader label="Mkt Cap" sortKey="marketCap" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="whitespace-nowrap" />
+                  <SortHeader label="Mkt Cap" sortKey="marketCap" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="text-center whitespace-nowrap" />
                   <TableHead>Tags</TableHead>
                   <TableHead></TableHead>
                 </TableRow>
@@ -497,7 +499,7 @@ export default function Watchlist() {
                         <TableCell className={`text-right tabular-nums whitespace-nowrap ${pctColor(sinceAdded)}`}>
                           {sinceAdded != null ? fmtPct(sinceAdded) : "—"}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-center">
                           {entry.market_cap_category ? (
                             <Badge variant="secondary" className={`text-xs ${CAP_COLORS[entry.market_cap_category] ?? ""}`}>
                               {entry.market_cap_category}
