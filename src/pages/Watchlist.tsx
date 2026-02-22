@@ -316,7 +316,7 @@ export default function Watchlist() {
   // Staleness
   const latestUpdate = useMemo(() => {
     const dates = entries
-      .map((e) => (e as any).last_price_update)
+      .map((e) => e.last_price_update)
       .filter(Boolean)
       .map((d: string) => new Date(d).getTime());
     return dates.length > 0 ? new Date(Math.max(...dates)) : null;

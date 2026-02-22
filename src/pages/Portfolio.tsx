@@ -94,25 +94,26 @@ function PositionDetailPanel({
   onDelete,
   onCategoryUpdate,
 }: {
-  position: Position & { source?: string | null; first_seen_at?: string | null };
+  position: Position;
   onUpdate: (updates: Partial<Position>) => void;
   onDelete: () => void;
   onCategoryUpdate: (cat: Category, tier: Tier) => void;
 }) {
   const { toast } = useToast();
   const [notes, setNotes] = useState(position.notes ?? "");
-  const [source, setSource] = useState((position as any).source ?? "");
+  const [source, setSource] = useState(position.source ?? "");
   const [deleting, setDeleting] = useState(false);
 
-  const saveField = async (field: string, value: string) => {
+  const saveField = async (field: "notes" | "source", value: string) => {
+    const update: Record<string, string | null> = { [field]: value || null };
     const { error } = await supabase
       .from("positions")
-      .update({ [field]: value || null } as any)
+      .update(update)
       .eq("id", position.id);
     if (error) {
       toast({ title: "Save failed", description: error.message, variant: "destructive" });
     } else {
-      onUpdate({ [field]: value || null } as any);
+      onUpdate({ [field]: value || null });
     }
   };
 
@@ -127,7 +128,7 @@ function PositionDetailPanel({
     }
   };
 
-  const firstSeen = (position as any).first_seen_at;
+  const firstSeen = position.first_seen_at;
 
   return (
     <div className="px-6 py-4 space-y-4">
@@ -161,7 +162,7 @@ function PositionDetailPanel({
             value={source}
             onChange={(e) => setSource(e.target.value)}
             onBlur={() => {
-              if (source !== ((position as any).source ?? "")) saveField("source", source);
+              if (source !== (position.source ?? "")) saveField("source", source);
             }}
             placeholder="Where did you find this pick?"
             className="text-sm"
@@ -361,7 +362,7 @@ export default function Portfolio() {
   // Staleness
   const latestPriceUpdate = useMemo(() => {
     const dates = positions
-      .map((p) => (p as any).last_price_update)
+      .map((p) => p.last_price_update)
       .filter(Boolean)
       .map((d: string) => new Date(d).getTime());
     return dates.length > 0 ? new Date(Math.max(...dates)) : null;
@@ -394,14 +395,14 @@ export default function Portfolio() {
             current_price: q.price,
             current_value: newValue,
             last_price_update: now,
-          } as any)
+          })
           .eq("id", pos.id);
       }
       setPositions((prev) =>
         prev.map((p) => {
           const q = quotes.find((qq) => qq.symbol === p.symbol);
           if (!q) return p;
-          return { ...p, current_price: q.price, current_value: (p.shares ?? 0) * q.price, last_price_update: now } as any;
+          return { ...p, current_price: q.price, current_value: (p.shares ?? 0) * q.price, last_price_update: now };
         })
       );
       toast({ title: "Prices updated", description: `Updated ${quotes.length} positions.` });

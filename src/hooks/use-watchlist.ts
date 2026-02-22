@@ -246,7 +246,7 @@ export function useWatchlist() {
           current_price: q.price,
           previous_close: q.previousClose,
           last_price_update: now,
-        } as any)
+        })
         .eq("user_id", user.id)
         .eq("symbol", q.symbol);
     }
