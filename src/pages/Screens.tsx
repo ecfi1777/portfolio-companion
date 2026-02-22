@@ -245,23 +245,6 @@ export default function Screens() {
 
         {historyOpen && (
           <>
-            {/* Screens list with delete */}
-            <div className="flex flex-wrap gap-2">
-              {screens.map((s) => (
-                <div key={s.id} className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-sm">
-                  <span className="font-medium">{s.name}</span>
-                  <span className="text-muted-foreground text-xs">({s.short_code})</span>
-                  <button
-                    className="ml-1 text-muted-foreground hover:text-destructive transition-colors"
-                    onClick={() => setDeleteScreenConfirm({ id: s.id, name: s.name })}
-                    title={`Delete ${s.name}`}
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-
             {runs.length > 0 && (
               <Card>
                 <div className="overflow-x-auto">
@@ -272,7 +255,8 @@ export default function Screens() {
                         <TableHead>Date</TableHead>
                         <TableHead>Screen</TableHead>
                         <TableHead className="text-right">Total Symbols</TableHead>
-                        <TableHead className="text-right">Matches</TableHead>
+                        <TableHead className="text-right">Watchlist Matches</TableHead>
+                        <TableHead className="w-10" />
                         <TableHead>Auto Tag</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -302,51 +286,70 @@ export default function Screens() {
                                     <Badge variant="secondary" className="text-xs">{run.auto_tag_code}</Badge>
                                   )}
                                 </TableCell>
+                                <TableCell className="text-right">
+                                  <button
+                                    className="text-muted-foreground hover:text-destructive transition-colors"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const screen = screens.find((s) => s.id === run.screen_id);
+                                      if (screen) setDeleteScreenConfirm({ id: screen.id, name: screen.name });
+                                    }}
+                                    title="Delete screen"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </TableCell>
                               </TableRow>
-                              {isRunExpanded && (
-                                <TableRow>
-                                  <TableCell colSpan={6} className="bg-muted/30 p-4">
-                                    <div className="space-y-3">
-                                      <h4 className="text-sm font-medium mb-2">
-                                        All Symbols ({(run.all_symbols ?? matchedSymbols).length})
-                                        <span className="ml-2 text-muted-foreground font-normal text-xs">
-                                          — {matchedSymbols.length} in watchlist
-                                        </span>
-                                      </h4>
-                                      <div className="flex flex-wrap gap-1.5">
-                                        {((run.all_symbols ?? []).length > 0 ? run.all_symbols! : matchedSymbols).map((sym) => {
-                                          const inWatchlist = wlSymbols.has(sym.toUpperCase());
-                                          const isMatch = matchedSet.has(sym.toUpperCase());
-                                          return (
-                                            <div key={sym} className="flex items-center gap-1">
-                                              <Badge
-                                                variant={isMatch ? "default" : "outline"}
-                                                className={`text-xs ${isMatch ? "" : "opacity-60"}`}
-                                              >
-                                                {sym}
-                                              </Badge>
-                                              {!inWatchlist && (
-                                                <Button
-                                                  variant="ghost"
-                                                  size="sm"
-                                                  className="h-5 w-5 p-0"
-                                                  onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    onQuickAdd(sym);
-                                                  }}
-                                                  title={`Add ${sym} to watchlist`}
-                                                >
-                                                  <Plus className="h-3 w-3" />
-                                                </Button>
-                                              )}
+                              {isRunExpanded && (() => {
+                                const allSyms = (run.all_symbols ?? []).length > 0 ? run.all_symbols! : matchedSymbols;
+                                const inWl = allSyms.filter((s) => wlSymbols.has(s.toUpperCase()));
+                                const notInWl = allSyms.filter((s) => !wlSymbols.has(s.toUpperCase()));
+                                return (
+                                  <TableRow>
+                                    <TableCell colSpan={7} className="bg-muted/30 p-4">
+                                      <div className="space-y-4">
+                                        {inWl.length > 0 && (
+                                          <div>
+                                            <h4 className="text-sm font-medium mb-2">In Your Watchlist ({inWl.length})</h4>
+                                            <div className="flex flex-wrap gap-1.5">
+                                              {inWl.map((sym) => (
+                                                <Badge key={sym} variant="default" className="text-xs">{sym}</Badge>
+                                              ))}
                                             </div>
-                                          );
-                                        })}
+                                          </div>
+                                        )}
+                                        {inWl.length > 0 && notInWl.length > 0 && (
+                                          <div className="border-t border-border" />
+                                        )}
+                                        {notInWl.length > 0 && (
+                                          <div>
+                                            <h4 className="text-sm font-medium mb-2 text-muted-foreground">Not in Watchlist ({notInWl.length})</h4>
+                                            <div className="flex flex-wrap gap-1.5">
+                                              {notInWl.map((sym) => (
+                                                <div key={sym} className="flex items-center gap-1">
+                                                  <Badge variant="outline" className="text-xs opacity-60">{sym}</Badge>
+                                                  <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-5 w-5 p-0"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      onQuickAdd(sym);
+                                                    }}
+                                                    title={`Add ${sym} to watchlist`}
+                                                  >
+                                                    <Plus className="h-3 w-3" />
+                                                  </Button>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )}
                                       </div>
-                                    </div>
-                                  </TableCell>
-                                </TableRow>
-                              )}
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })()}
                             </React.Fragment>
                           );
                         })}
