@@ -177,6 +177,11 @@ export default function Watchlist() {
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
   const [deleteScreenConfirm, setDeleteScreenConfirm] = useState<{ id: string; name: string } | null>(null);
 
+  // Collapsible section states
+  const [screenHistoryOpen, setScreenHistoryOpen] = useState(false);
+  const [overlapOpen, setOverlapOpen] = useState(false);
+  const [alertsOpen, setAlertsOpen] = useState(false);
+
   // Filters
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
   const [selectedCaps, setSelectedCaps] = useState<Set<string>>(new Set());
@@ -746,23 +751,33 @@ export default function Watchlist() {
       {/* Screen History */}
       {(runs.length > 0 || screens.length > 0) && (
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div
+            className="flex items-center justify-between cursor-pointer select-none"
+            onClick={() => setScreenHistoryOpen((o) => !o)}
+          >
             <h2 className="text-lg font-semibold flex items-center gap-2">
               <FileSearch className="h-5 w-5" />
               Screen History
+              <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${screenHistoryOpen ? "rotate-180" : ""}`} />
             </h2>
-            <Select value={historyFilter} onValueChange={setHistoryFilter}>
-              <SelectTrigger className="w-40 h-8">
-                <SelectValue placeholder="All screens" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Screens</SelectItem>
-                {screens.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {screenHistoryOpen && (
+              <div onClick={(e) => e.stopPropagation()}>
+                <Select value={historyFilter} onValueChange={setHistoryFilter}>
+                  <SelectTrigger className="w-40 h-8">
+                    <SelectValue placeholder="All screens" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Screens</SelectItem>
+                    {screens.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
+
+          {screenHistoryOpen && (<>
 
           {/* Screens list with delete */}
           <div className="flex flex-wrap gap-2">
@@ -875,19 +890,43 @@ export default function Watchlist() {
               </div>
             </Card>
           )}
+          </>)}
         </div>
       )}
 
       {/* Cross-Screen Overlap Matrix */}
-      <ScreenOverlapMatrix runs={runs} screens={screens} entries={entries} onQuickAdd={(sym) => { setAddPrefill(sym); setAddOpen(true); }} />
+      {screens.length >= 2 && (
+        <div className="space-y-3">
+          <div
+            className="flex items-center cursor-pointer select-none gap-2"
+            onClick={() => setOverlapOpen((o) => !o)}
+          >
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <FileSearch className="h-5 w-5" />
+              Cross-Screen Overlap
+              <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${overlapOpen ? "rotate-180" : ""}`} />
+            </h2>
+          </div>
+          {overlapOpen && (
+            <ScreenOverlapMatrix runs={runs} screens={screens} entries={entries} onQuickAdd={(sym) => { setAddPrefill(sym); setAddOpen(true); }} />
+          )}
+        </div>
+      )}
 
       {/* Alerts Section */}
       {(activeAlerts.length > 0 || triggeredAlerts.length > 0) && (
         <div className="space-y-3">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <BellRing className="h-5 w-5" />
-            Price Alerts
-          </h2>
+          <div
+            className="flex items-center justify-between cursor-pointer select-none"
+            onClick={() => setAlertsOpen((o) => !o)}
+          >
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <BellRing className="h-5 w-5" />
+              Price Alerts
+              <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${alertsOpen ? "rotate-180" : ""}`} />
+            </h2>
+          </div>
+          {alertsOpen && (
           <Tabs value={alertTab} onValueChange={setAlertTab}>
             <TabsList>
               <TabsTrigger value="watchlist">Watchlist</TabsTrigger>
@@ -977,6 +1016,7 @@ export default function Watchlist() {
               )}
             </TabsContent>
           </Tabs>
+          )}
         </div>
       )}
 
