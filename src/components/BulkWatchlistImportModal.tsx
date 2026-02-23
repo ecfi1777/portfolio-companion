@@ -179,7 +179,21 @@ export function BulkWatchlistImportModal({
     handleClose(false);
 
     // Async enrichment — runs after modal closes
-    enrichWatchlistEntries(userId, importedSymbols, fmpApiKey, onImportComplete);
+    enrichWatchlistEntries(userId, importedSymbols, fmpApiKey, (result) => {
+      onImportComplete();
+      if (result.failed > 0) {
+        toast({
+          title: "Market data enrichment",
+          description: `${result.succeeded} of ${result.total} succeeded, ${result.failed} failed (API limit). Use Re-enrich to retry.`,
+          variant: "destructive",
+        });
+      } else if (result.succeeded > 0) {
+        toast({
+          title: "Market data enrichment complete",
+          description: `${result.succeeded} symbol${result.succeeded !== 1 ? "s" : ""} updated.`,
+        });
+      }
+    });
   }, [rows, selected, userId, duplicateCount, toast, onImportComplete, handleClose, fmpApiKey]);
 
   return (

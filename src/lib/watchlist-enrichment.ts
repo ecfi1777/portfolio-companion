@@ -2,18 +2,31 @@ import { supabase } from "@/integrations/supabase/client";
 import { lookupSymbol } from "@/lib/fmp-api";
 import { getMarketCapCategory } from "@/lib/market-cap";
 
+export interface EnrichmentResult {
+  succeeded: number;
+  failed: number;
+  total: number;
+}
+
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 /**
  * Shared post-add enrichment for watchlist entries.
  * Runs screen cross-referencing and FMP market cap enrichment.
- * Best-effort: errors are caught and logged, never block the caller.
+ * Returns a result object with success/failure counts for FMP enrichment.
  */
 export async function enrichWatchlistEntries(
   userId: string,
   symbols: string[],
   fmpApiKey?: string,
-  onComplete?: () => void
-): Promise<void> {
-  if (symbols.length === 0) return;
+  onComplete?: (result: EnrichmentResult) => void
+): Promise<EnrichmentResult> {
+  const result: EnrichmentResult = { succeeded: 0, failed: 0, total: symbols.length };
+
+  if (symbols.length === 0) {
+    onComplete?.(result);
+    return result;
+  }
 
   try {
     // --- Screen cross-referencing ---
@@ -55,9 +68,10 @@ export async function enrichWatchlistEntries(
       console.error("Screen tag cross-reference failed:", e);
     }
 
-    // --- FMP enrichment ---
+    // --- FMP enrichment with rate limiting ---
     if (fmpApiKey) {
-      for (const sym of symbols) {
+      for (let i = 0; i < symbols.length; i++) {
+        const sym = symbols[i];
         try {
           const profile = await lookupSymbol(sym, fmpApiKey);
           if (profile && profile.mktCap) {
@@ -71,13 +85,22 @@ export async function enrichWatchlistEntries(
               })
               .eq("user_id", userId)
               .eq("symbol", sym);
+            result.succeeded++;
+          } else {
+            result.failed++;
           }
         } catch {
-          // Best-effort, continue with next symbol
+          result.failed++;
+        }
+        // 200ms delay between calls to avoid rate limits
+        if (i < symbols.length - 1) {
+          await delay(200);
         }
       }
     }
   } finally {
-    onComplete?.();
+    onComplete?.(result);
   }
+
+  return result;
 }
