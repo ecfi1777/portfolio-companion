@@ -18,6 +18,7 @@ export interface ProfileData {
   symbol: string;
   companyName: string;
   price: number;
+  previousClose: number;
   industry: string;
   sector: string;
   mktCap: number;
@@ -54,6 +55,7 @@ export async function lookupSymbol(symbol: string, apiKey: string): Promise<Prof
       symbol: p.symbol,
       companyName: p.companyName ?? "",
       price: p.price ?? 0,
+      previousClose: p.previousClose ?? p.previousClosePrice ?? 0,
       industry: p.industry ?? "",
       sector: p.sector ?? "",
       mktCap: p.marketCap ?? p.mktCap ?? 0,
@@ -106,6 +108,87 @@ export async function fetchQuotes(symbols: string[], apiKey: string): Promise<Qu
       }
     } catch {
       // silently continue
+    }
+  }
+
+  return results;
+}
+
+// Fetch profiles in batches using /stable/profile (works on Basic plan)
+export async function fetchProfilesBatched(
+  symbols: string[],
+  apiKey: string,
+  onProgress?: (done: number, total: number) => void
+): Promise<ProfileData[]> {
+  if (!apiKey || symbols.length === 0) return [];
+
+  const total = symbols.length;
+  const results: ProfileData[] = [];
+  let useBatchMode = true;
+  const BATCH_SIZE = 20;
+  const batches: string[][] = [];
+
+  for (let i = 0; i < symbols.length; i += BATCH_SIZE) {
+    batches.push(symbols.slice(i, i + BATCH_SIZE));
+  }
+
+  for (let bi = 0; bi < batches.length; bi++) {
+    const batch = batches[bi];
+
+    if (useBatchMode) {
+      try {
+        const res = await fetch(
+          `${FMP_BASE}/profile?symbol=${batch.map(encodeURIComponent).join(",")}&apikey=${apiKey}`
+        );
+        if (!res.ok) {
+          // Batch mode not supported, switch to single
+          useBatchMode = false;
+        } else {
+          const data = await res.json();
+          if (Array.isArray(data) && data.length > 0) {
+            for (const p of data) {
+              const profile: ProfileData = {
+                symbol: p.symbol,
+                companyName: p.companyName ?? "",
+                price: p.price ?? 0,
+                previousClose: p.previousClose ?? p.previousClosePrice ?? 0,
+                industry: p.industry ?? "",
+                sector: p.sector ?? "",
+                mktCap: p.marketCap ?? p.mktCap ?? 0,
+              };
+              profileCache.set(profile.symbol.toUpperCase(), {
+                data: profile,
+                expiry: Date.now() + PROFILE_TTL,
+              });
+              results.push(profile);
+            }
+            onProgress?.(Math.min(results.length, total), total);
+            continue;
+          } else if (bi === 0) {
+            // First batch returned empty — batch mode may not work
+            useBatchMode = false;
+          }
+        }
+      } catch {
+        useBatchMode = false;
+      }
+    }
+
+    // Single-symbol fallback for this batch
+    for (const sym of batch) {
+      const cached = getCached(profileCache, sym.toUpperCase());
+      if (cached) {
+        results.push(cached);
+        onProgress?.(Math.min(results.length, total), total);
+        continue;
+      }
+      const profile = await lookupSymbol(sym, apiKey);
+      if (profile) {
+        results.push(profile);
+      }
+      onProgress?.(Math.min(results.length + (profile ? 0 : 1), total), total);
+      // 200ms delay between single calls
+      await new Promise((r) => setTimeout(r, 200));
     }
   }
 

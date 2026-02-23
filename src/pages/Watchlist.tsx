@@ -201,6 +201,7 @@ export default function Watchlist() {
     });
   }, [user]);
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshProgress, setRefreshProgress] = useState<{ done: number; total: number } | null>(null);
   const [reEnriching, setReEnriching] = useState(false);
   const [alertTab, setAlertTab] = useState<string>("watchlist");
 
@@ -350,15 +351,40 @@ export default function Watchlist() {
     if (!loading && entries.length > 0 && fmpApiKey && !autoRefreshed) {
       setAutoRefreshed(true);
       setRefreshing(true);
-      refreshPrices(fmpApiKey).finally(() => setRefreshing(false));
+      refreshPrices(fmpApiKey, (done, total) => setRefreshProgress({ done, total }))
+        .then((result) => {
+          if (result && result.failed > 0) {
+            toast({
+              title: "Price refresh",
+              description: `${result.succeeded} of ${result.total} refreshed, ${result.failed} failed.`,
+              variant: "destructive",
+            });
+          }
+        })
+        .finally(() => { setRefreshing(false); setRefreshProgress(null); });
     }
   }, [loading, entries.length, fmpApiKey, autoRefreshed, refreshPrices]);
 
   const handleManualRefresh = async () => {
     if (!fmpApiKey) return;
     setRefreshing(true);
-    await refreshPrices(fmpApiKey);
+    const result = await refreshPrices(fmpApiKey, (done, total) => setRefreshProgress({ done, total }));
     setRefreshing(false);
+    setRefreshProgress(null);
+    if (result) {
+      if (result.failed > 0) {
+        toast({
+          title: "Price refresh",
+          description: `${result.succeeded} of ${result.total} refreshed, ${result.failed} failed.`,
+          variant: "destructive",
+        });
+      } else if (result.succeeded > 0) {
+        toast({
+          title: "Prices refreshed",
+          description: `${result.succeeded} symbol${result.succeeded !== 1 ? "s" : ""} updated.`,
+        });
+      }
+    }
   };
 
   const nullCapCount = useMemo(() => entries.filter((e) => e.market_cap == null).length, [entries]);
@@ -439,7 +465,9 @@ export default function Watchlist() {
                   disabled={!fmpApiKey || refreshing}
                 >
                   <RefreshCw className={`mr-1 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-                  Refresh
+                  {refreshing && refreshProgress
+                    ? `Refreshing ${refreshProgress.done}/${refreshProgress.total}...`
+                    : "Refresh"}
                 </Button>
               </TooltipTrigger>
               {!fmpApiKey && <TooltipContent>Set your FMP API key in Settings</TooltipContent>}
