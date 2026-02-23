@@ -579,8 +579,8 @@ export default function Portfolio() {
                   <TableHead className="text-right">Cost Basis</TableHead>
                   <SortableHead label="G/L ($)" sortKeyName="gainLossDollar" className="text-right" />
                   <SortableHead label="G/L (%)" sortKeyName="gainLossPct" className="text-right" />
-                  <SortableHead label="Weight" sortKeyName="weight" className="text-right" />
-                  <TableHead className="text-right">To Goal</TableHead>
+                  <SortableHead label="Portfolio Weight" sortKeyName="weight" className="text-right" />
+                  <TableHead className="text-right">Category Goal</TableHead>
                   <SortableHead label="Category" sortKeyName="category" />
                 </TableRow>
               </TableHeader>
