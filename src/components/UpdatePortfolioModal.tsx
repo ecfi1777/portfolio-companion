@@ -94,14 +94,16 @@ interface UpdatePortfolioModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
+  fileNames?: string[];
 }
 
 type ModalPhase = "upload" | "summary";
 
-export function UpdatePortfolioModal({ open, onOpenChange, onSuccess }: UpdatePortfolioModalProps) {
+export function UpdatePortfolioModal({ open, onOpenChange, onSuccess, fileNames: _externalFileNames }: UpdatePortfolioModalProps) {
   const { user } = useAuth();
   const { toast } = useToast();
   const [csvTexts, setCsvTexts] = useState<string[]>([]);
+  const [csvFileNames, setCsvFileNames] = useState<string[]>([]);
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
   const [importing, setImporting] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -112,6 +114,7 @@ export function UpdatePortfolioModal({ open, onOpenChange, onSuccess }: UpdatePo
     const reader = new FileReader();
     reader.onload = (e) => {
       const text = e.target?.result as string;
+      setCsvFileNames((prev) => [...prev, file.name]);
       setCsvTexts((prev) => {
         const next = [...prev, text];
         const result = parseFidelityCSVs(next);
@@ -213,6 +216,16 @@ export function UpdatePortfolioModal({ open, onOpenChange, onSuccess }: UpdatePo
 
       // Build summary and switch phase
       const summary = buildChangeSummary(existingPositions, parseResult.positions, oldCash, parseResult.cashBalance);
+
+      // Log import history
+      const totalValue = parseResult.positions.reduce((s, p) => s + p.currentValue, 0) + parseResult.cashBalance;
+      await supabase.from("import_history").insert({
+        user_id: user.id,
+        file_names: csvFileNames,
+        total_positions: parseResult.positions.length,
+        total_value: totalValue,
+      });
+
       setChangeSummary(summary);
       setPhase("summary");
       onSuccess();
@@ -225,6 +238,7 @@ export function UpdatePortfolioModal({ open, onOpenChange, onSuccess }: UpdatePo
 
   const resetState = () => {
     setCsvTexts([]);
+    setCsvFileNames([]);
     setParseResult(null);
     setPhase("upload");
     setChangeSummary(null);
