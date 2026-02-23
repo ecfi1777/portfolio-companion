@@ -51,6 +51,7 @@ export async function lookupSymbol(symbol: string, apiKey: string): Promise<Prof
     if (!Array.isArray(data) || data.length === 0) return null;
 
     const p = data[0];
+    console.log("[FMP DEBUG] Raw /stable/profile single response:", JSON.stringify(p, null, 2));
     const result: ProfileData = {
       symbol: p.symbol,
       companyName: p.companyName ?? "",
@@ -146,6 +147,10 @@ export async function fetchProfilesBatched(
         } else {
           const data = await res.json();
           if (Array.isArray(data) && data.length > 0) {
+            // TEMP DEBUG: Log raw API response to identify field names
+            if (bi === 0) {
+              console.log("[FMP DEBUG] Raw /stable/profile response for first symbol:", JSON.stringify(data[0], null, 2));
+            }
             for (const p of data) {
               const profile: ProfileData = {
                 symbol: p.symbol,
