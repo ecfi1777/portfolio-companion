@@ -669,6 +669,7 @@ export default function Portfolio() {
                               tier={p.tier}
                               onUpdate={(cat, tier) => handleCategoryUpdate(p.id, cat, tier)}
                               tierCounts={tierCounts}
+                              portfolioTotal={grandTotal}
                             />
                           )}
                         </TableCell>
