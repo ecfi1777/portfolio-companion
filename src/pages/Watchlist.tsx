@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect } from "react";
+import { BulkWatchlistImportModal } from "@/components/BulkWatchlistImportModal";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
@@ -21,7 +22,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Eye, Plus, Settings, Search, Bell, BellRing, ChevronDown, ChevronUp, ArrowUpDown, Trash2, X, Tag as TagIcon, RefreshCw, AlertTriangle, Clock, Flame,
+  Eye, Plus, Settings, Search, Bell, BellRing, ChevronDown, ChevronUp, ArrowUpDown, Trash2, X, Tag as TagIcon, RefreshCw, AlertTriangle, Clock, Flame, Upload,
 } from "lucide-react";
 import { useWatchlist, type WatchlistEntry } from "@/hooks/use-watchlist";
 import { usePortfolioSettings } from "@/hooks/use-portfolio-settings";
@@ -201,6 +202,7 @@ export default function Watchlist() {
   const [alertTab, setAlertTab] = useState<string>("watchlist");
 
   const [addOpen, setAddOpen] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [addPrefill, setAddPrefill] = useState<string | undefined>(undefined);
   const [tagsOpen, setTagsOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -415,6 +417,10 @@ export default function Watchlist() {
             <Settings className="mr-1 h-4 w-4" />
             Manage Tags
           </Button>
+          <Button variant="outline" size="sm" onClick={() => setBulkOpen(true)}>
+            <Upload className="mr-1 h-4 w-4" />
+            Bulk Import
+          </Button>
           <Button size="sm" onClick={() => { setAddPrefill(undefined); setAddOpen(true); }}>
             <Plus className="mr-1 h-4 w-4" />
             Add to Watchlist
@@ -443,6 +449,13 @@ export default function Watchlist() {
         }}
       />
       <ManageTagsModal open={tagsOpen} onOpenChange={setTagsOpen} tags={tags} onCreate={createTag} onUpdate={updateTag} onDelete={deleteTag} />
+      <BulkWatchlistImportModal
+        open={bulkOpen}
+        onOpenChange={setBulkOpen}
+        existingSymbols={new Set(entries.map((e) => e.symbol.toUpperCase()))}
+        userId={user?.id ?? ""}
+        onImportComplete={refetchWatchlist}
+      />
 
       {/* Search + Filters */}
       <div className="flex flex-wrap items-center gap-2">
