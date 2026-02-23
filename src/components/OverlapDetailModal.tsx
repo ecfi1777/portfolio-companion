@@ -5,7 +5,9 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Check, Plus } from "lucide-react";
+import { Check, Plus, Loader2 } from "lucide-react";
+import { lookupSymbol } from "@/lib/fmp-api";
+import { toast } from "@/hooks/use-toast";
 
 interface OverlapDetailModalProps {
   open: boolean;
@@ -14,11 +16,19 @@ interface OverlapDetailModalProps {
   screenB: { name: string; color: string; symbols: string[] };
   watchlistSymbols: Set<string>;
   portfolioSymbols: Set<string>;
-  onAdd: (symbol: string) => Promise<string | null>;
+  fmpApiKey?: string;
+  onAdd: (data: {
+    symbol: string;
+    company_name?: string;
+    price_when_added?: number;
+    industry?: string;
+    sector?: string;
+    market_cap?: number;
+  }) => Promise<string | null>;
 }
 
 export function OverlapDetailModal({
-  open, onOpenChange, screenA, screenB, watchlistSymbols, portfolioSymbols, onAdd,
+  open, onOpenChange, screenA, screenB, watchlistSymbols, portfolioSymbols, fmpApiKey, onAdd,
 }: OverlapDetailModalProps) {
   const [addedSymbols, setAddedSymbols] = useState<Set<string>>(new Set());
   const [addingSymbol, setAddingSymbol] = useState<string | null>(null);
@@ -34,9 +44,28 @@ export function OverlapDetailModal({
 
   const handleAdd = async (symbol: string) => {
     setAddingSymbol(symbol);
-    const id = await onAdd(symbol);
-    if (id) {
-      setAddedSymbols((prev) => new Set(prev).add(symbol.toUpperCase()));
+    try {
+      // Enrich with FMP data if API key is available
+      let enrichedData: Parameters<typeof onAdd>[0] = { symbol };
+      if (fmpApiKey) {
+        const profile = await lookupSymbol(symbol, fmpApiKey);
+        if (profile) {
+          enrichedData = {
+            symbol,
+            company_name: profile.companyName || undefined,
+            price_when_added: profile.price || undefined,
+            industry: profile.industry || undefined,
+            sector: profile.sector || undefined,
+            market_cap: profile.mktCap || undefined,
+          };
+        }
+      }
+      const id = await onAdd(enrichedData);
+      if (id) {
+        setAddedSymbols((prev) => new Set(prev).add(symbol.toUpperCase()));
+      }
+    } catch (err) {
+      toast({ title: "Error", description: `Failed to add ${symbol}`, variant: "destructive" });
     }
     setAddingSymbol(null);
   };
@@ -95,8 +124,12 @@ export function OverlapDetailModal({
                             disabled={addingSymbol === sym}
                             onClick={() => handleAdd(sym)}
                           >
-                            <Plus className="h-3 w-3" />
-                            Add
+                            {addingSymbol === sym ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Plus className="h-3 w-3" />
+                            )}
+                            {addingSymbol === sym ? "" : "Add"}
                           </Button>
                         )}
                       </TableCell>

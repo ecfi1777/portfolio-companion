@@ -455,7 +455,8 @@ export default function Screens() {
                     }}
                     watchlistSymbols={watchlistSymbolSet}
                     portfolioSymbols={portfolioSymbolSet}
-                    onAdd={(sym) => addEntry({ symbol: sym })}
+                    fmpApiKey={fmpApiKey}
+                    onAdd={(data) => addEntry(data)}
                   />
                 );
               })()}
