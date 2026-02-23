@@ -186,8 +186,15 @@ export function useWatchlist() {
 
     // Fire-and-forget: screen cross-referencing + FMP enrichment
     if (inserted) {
-      enrichWatchlistEntries(user.id, [data.symbol.toUpperCase().trim()], undefined, () => {
+      enrichWatchlistEntries(user.id, [data.symbol.toUpperCase().trim()], undefined, (result) => {
         fetchAll();
+        if (result.failed > 0) {
+          toast({
+            title: "Market data enrichment",
+            description: `Failed to fetch market data for ${data.symbol.toUpperCase()}. Use Re-enrich to retry.`,
+            variant: "destructive",
+          });
+        }
       });
     }
 

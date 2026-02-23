@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { BulkWatchlistImportModal } from "@/components/BulkWatchlistImportModal";
 import { supabase } from "@/integrations/supabase/client";
+import { enrichWatchlistEntries } from "@/lib/watchlist-enrichment";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Eye, Plus, Settings, Search, Bell, BellRing, ChevronDown, ChevronUp, ArrowUpDown, Trash2, X, Tag as TagIcon, RefreshCw, AlertTriangle, Clock, Flame, Upload,
+  Eye, Plus, Settings, Search, Bell, BellRing, ChevronDown, ChevronUp, ArrowUpDown, Trash2, X, Tag as TagIcon, RefreshCw, AlertTriangle, Clock, Flame, Upload, DatabaseZap,
 } from "lucide-react";
 import { useWatchlist, type WatchlistEntry } from "@/hooks/use-watchlist";
 import { usePortfolioSettings } from "@/hooks/use-portfolio-settings";
@@ -33,6 +34,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { formatMarketCap } from "@/lib/market-cap";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { toast } from "@/hooks/use-toast";
 
 /* ── Formatters ── */
 const fmtPrice = (n: number | null) =>
@@ -199,6 +201,7 @@ export default function Watchlist() {
     });
   }, [user]);
   const [refreshing, setRefreshing] = useState(false);
+  const [reEnriching, setReEnriching] = useState(false);
   const [alertTab, setAlertTab] = useState<string>("watchlist");
 
   const [addOpen, setAddOpen] = useState(false);
@@ -358,6 +361,35 @@ export default function Watchlist() {
     setRefreshing(false);
   };
 
+  const nullCapCount = useMemo(() => entries.filter((e) => e.market_cap == null).length, [entries]);
+
+  const handleReEnrich = async () => {
+    if (!fmpApiKey || !user) return;
+    const nullCapSymbols = entries.filter((e) => e.market_cap == null).map((e) => e.symbol);
+    if (nullCapSymbols.length === 0) return;
+    setReEnriching(true);
+    const result = await enrichWatchlistEntries(user.id, nullCapSymbols, fmpApiKey);
+    setReEnriching(false);
+    await refetchWatchlist();
+    if (result.failed > 0) {
+      toast({
+        title: "Market data enrichment",
+        description: `${result.succeeded} of ${result.total} succeeded, ${result.failed} failed (API limit). Use Re-enrich to retry.`,
+        variant: "destructive",
+      });
+    } else if (result.succeeded > 0) {
+      toast({
+        title: "Market data enrichment complete",
+        description: `${result.succeeded} symbol${result.succeeded !== 1 ? "s" : ""} updated.`,
+      });
+    } else {
+      toast({
+        title: "No updates",
+        description: "No market data could be fetched. Your API plan may not cover these endpoints.",
+      });
+    }
+  };
+
   // Staleness
   const latestUpdate = useMemo(() => {
     const dates = entries
@@ -408,6 +440,25 @@ export default function Watchlist() {
                 >
                   <RefreshCw className={`mr-1 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
                   Refresh
+                </Button>
+              </TooltipTrigger>
+              {!fmpApiKey && <TooltipContent>Set your FMP API key in Settings</TooltipContent>}
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleReEnrich}
+                  disabled={!fmpApiKey || reEnriching || nullCapCount === 0}
+                >
+                  <DatabaseZap className={`mr-1 h-4 w-4 ${reEnriching ? "animate-spin" : ""}`} />
+                  Re-enrich
+                  {nullCapCount > 0 && (
+                    <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">
+                      {nullCapCount}
+                    </Badge>
+                  )}
                 </Button>
               </TooltipTrigger>
               {!fmpApiKey && <TooltipContent>Set your FMP API key in Settings</TooltipContent>}
