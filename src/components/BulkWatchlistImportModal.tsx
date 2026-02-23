@@ -8,6 +8,8 @@ import { Upload, FileText, AlertCircle } from "lucide-react";
 import { parseGenericCSV } from "@/lib/csv-generic-parser";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { lookupSymbol } from "@/lib/fmp-api";
+import { getMarketCapCategory } from "@/lib/market-cap";
 
 interface ParsedRow {
   symbol: string;
@@ -22,6 +24,7 @@ interface BulkWatchlistImportModalProps {
   existingSymbols: Set<string>;
   userId: string;
   onImportComplete: () => void;
+  fmpApiKey?: string;
 }
 
 function detectColumnIndex(headers: string[], keywords: string[]): number {
@@ -38,6 +41,7 @@ export function BulkWatchlistImportModal({
   existingSymbols,
   userId,
   onImportComplete,
+  fmpApiKey,
 }: BulkWatchlistImportModalProps) {
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -216,7 +220,34 @@ export function BulkWatchlistImportModal({
 
     onImportComplete();
     handleClose(false);
-  }, [rows, selected, userId, duplicateCount, toast, onImportComplete, handleClose]);
+
+    // Async market cap enrichment — runs after modal closes
+    if (fmpApiKey && importedSymbols.length > 0) {
+      (async () => {
+        for (const sym of importedSymbols) {
+          try {
+            const profile = await lookupSymbol(sym, fmpApiKey);
+            if (profile && profile.mktCap) {
+              await supabase
+                .from("watchlist_entries")
+                .update({
+                  market_cap: profile.mktCap,
+                  market_cap_category: getMarketCapCategory(profile.mktCap),
+                  sector: profile.sector || null,
+                  industry: profile.industry || null,
+                })
+                .eq("user_id", userId)
+                .eq("symbol", sym);
+            }
+          } catch {
+            // Best-effort, continue with next symbol
+          }
+        }
+        // Refresh watchlist once all enrichment is done
+        onImportComplete();
+      })();
+    }
+  }, [rows, selected, userId, duplicateCount, toast, onImportComplete, handleClose, fmpApiKey]);
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
