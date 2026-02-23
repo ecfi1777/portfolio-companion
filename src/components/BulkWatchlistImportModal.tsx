@@ -155,7 +155,7 @@ export function BulkWatchlistImportModal({
     if (toInsert.length === 0) return;
 
     setImporting(true);
-    const { error: insertError } = await supabase.from("watchlist_entries").insert(toInsert);
+    const { error: insertError } = await supabase.from("watchlist_entries").upsert(toInsert, { onConflict: "user_id,symbol", ignoreDuplicates: true });
     setImporting(false);
 
     if (insertError) {
