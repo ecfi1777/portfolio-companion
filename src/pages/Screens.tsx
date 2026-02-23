@@ -49,6 +49,7 @@ export default function Screens() {
   const [portfolioOverlapOpen, setPortfolioOverlapOpen] = useState(true);
   const [watchlistOverlapOpen, setWatchlistOverlapOpen] = useState(true);
   const [overlapModal, setOverlapModal] = useState<{ rowIdx: number; colIdx: number } | null>(null);
+  const [selectedScreenIndices, setSelectedScreenIndices] = useState<Set<number>>(new Set());
 
   // Portfolio positions
   const [positions, setPositions] = useState<Position[]>([]);
@@ -78,6 +79,31 @@ export default function Screens() {
     );
   }, [runs]);
 
+  // Initialize selected screens when latestByScreen changes
+  useEffect(() => {
+    setSelectedScreenIndices(new Set(latestByScreen.map((_, i) => i)));
+  }, [latestByScreen]);
+
+  const toggleScreenFilter = (idx: number) => {
+    setSelectedScreenIndices((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  };
+
+  // Filtered screens for analysis views
+  const filteredScreens = useMemo(
+    () => latestByScreen.filter((_, i) => selectedScreenIndices.has(i)),
+    [latestByScreen, selectedScreenIndices]
+  );
+  // Map from filtered index back to original index
+  const filteredOriginalIndices = useMemo(
+    () => latestByScreen.map((_, i) => i).filter((i) => selectedScreenIndices.has(i)),
+    [latestByScreen, selectedScreenIndices]
+  );
+
   const getSymbols = (r: typeof runs[number]) => {
     const all = r.all_symbols ?? [];
     return all.length > 0 ? all : (r.matched_symbols ?? []);
@@ -92,14 +118,15 @@ export default function Screens() {
     [positions]
   );
 
-  // Cross-screen symbols (2+ screens)
+  // Cross-screen symbols (2+ of SELECTED screens)
   const crossScreenData = useMemo(() => {
     const symbolScreens = new Map<string, Set<number>>();
-    latestByScreen.forEach((run, idx) => {
+    filteredOriginalIndices.forEach((origIdx) => {
+      const run = latestByScreen[origIdx];
       for (const sym of getSymbols(run)) {
         const upper = sym.toUpperCase();
         if (!symbolScreens.has(upper)) symbolScreens.set(upper, new Set());
-        symbolScreens.get(upper)!.add(idx);
+        symbolScreens.get(upper)!.add(origIdx);
       }
     });
     const results: { symbol: string; screenIndices: number[] }[] = [];
@@ -110,13 +137,15 @@ export default function Screens() {
     }
     results.sort((a, b) => b.screenIndices.length - a.screenIndices.length || a.symbol.localeCompare(b.symbol));
     return results;
-  }, [latestByScreen]);
+  }, [latestByScreen, filteredOriginalIndices]);
 
   const totalUniqueSymbols = useMemo(() => {
     const all = new Set<string>();
-    latestByScreen.forEach((run) => getSymbols(run).forEach((s) => all.add(s.toUpperCase())));
+    filteredOriginalIndices.forEach((origIdx) => {
+      getSymbols(latestByScreen[origIdx]).forEach((s) => all.add(s.toUpperCase()));
+    });
     return all.size;
-  }, [latestByScreen]);
+  }, [latestByScreen, filteredOriginalIndices]);
 
   // Portfolio overlap
   const portfolioOverlapData = useMemo(() => {
@@ -379,37 +408,68 @@ export default function Screens() {
           </div>
           {screenOverlapOpen && (
             <div className="space-y-4">
-              {/* Matrix (numeric only, no click-expand) */}
+              {/* Screen filter toggles */}
+              <div className="flex flex-wrap gap-1.5" onClick={(e) => e.stopPropagation()}>
+                {latestByScreen.map((r, idx) => {
+                  const selected = selectedScreenIndices.has(idx);
+                  const color = SCREEN_COLORS[idx % SCREEN_COLORS.length];
+                  return (
+                    <button
+                      key={r.id}
+                      onClick={() => toggleScreenFilter(idx)}
+                      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium border transition-all ${
+                        selected ? "ring-1 ring-offset-1 ring-ring" : "opacity-40"
+                      }`}
+                      style={{
+                        backgroundColor: selected ? `${color}20` : "transparent",
+                        color: color,
+                        borderColor: `${color}40`,
+                      }}
+                    >
+                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
+                      {r.screen?.name ?? r.screen_id.slice(0, 6)}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Matrix */}
+              {filteredScreens.length >= 2 && (
               <Card>
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead className="min-w-[120px]" />
-                        {latestByScreen.map((r, idx) => (
+                        {filteredScreens.map((r, fi) => {
+                          const origIdx = filteredOriginalIndices[fi];
+                          return (
                           <TableHead key={r.id} className="text-center text-xs whitespace-nowrap">
                             <div className="flex items-center justify-center gap-1">
-                              <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: SCREEN_COLORS[idx % SCREEN_COLORS.length] }} />
+                              <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: SCREEN_COLORS[origIdx % SCREEN_COLORS.length] }} />
                               {r.screen?.name ?? r.screen_id.slice(0, 6)}
                             </div>
                             <div className="text-[10px] text-muted-foreground font-normal">
                               {new Date(r.run_date).toLocaleDateString()}
                             </div>
                           </TableHead>
-                        ))}
+                          );
+                        })}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {latestByScreen.map((row, ri) => (
+                      {filteredScreens.map((row, ri) => {
+                        const rowOrigIdx = filteredOriginalIndices[ri];
+                        return (
                         <TableRow key={row.id}>
                           <TableCell className="font-medium text-sm whitespace-nowrap">
                             <div className="flex items-center gap-1.5">
-                              <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: SCREEN_COLORS[ri % SCREEN_COLORS.length] }} />
+                              <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: SCREEN_COLORS[rowOrigIdx % SCREEN_COLORS.length] }} />
                               {row.screen?.name ?? row.screen_id.slice(0, 6)}
                               <span className="text-muted-foreground text-xs">({getSymbols(row).length})</span>
                             </div>
                           </TableCell>
-                          {latestByScreen.map((col, ci) => {
+                          {filteredScreens.map((col, ci) => {
                             const count = ri === ci ? getSymbols(row).length : overlapCount(row, col);
                             const isDiag = ri === ci;
                             const maxPossible = Math.min(getSymbols(row).length, getSymbols(col).length);
@@ -423,18 +483,20 @@ export default function Screens() {
                                     ? { backgroundColor: `hsl(var(--primary) / ${(intensity * 0.3 + 0.05).toFixed(2)})` }
                                     : undefined
                                 }
-                                onClick={!isDiag && count > 0 ? () => setOverlapModal({ rowIdx: ri, colIdx: ci }) : undefined}
+                                onClick={!isDiag && count > 0 ? () => setOverlapModal({ rowIdx: rowOrigIdx, colIdx: filteredOriginalIndices[ci] }) : undefined}
                               >
                                 {count}
                               </TableCell>
                             );
                           })}
                         </TableRow>
-                      ))}
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
               </Card>
+              )}
 
               {overlapModal && (() => {
                 const rowRun = latestByScreen[overlapModal.rowIdx];
