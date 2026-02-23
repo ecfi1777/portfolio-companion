@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -40,7 +40,6 @@ export default function Screens() {
 
   // Screen history state
   const [historyOpen, setHistoryOpen] = useState(true);
-  const [historyFilter, setHistoryFilter] = useState("all");
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
   const [deleteScreenConfirm, setDeleteScreenConfirm] = useState<{ id: string; name: string } | null>(null);
 
@@ -253,7 +252,7 @@ export default function Screens() {
       {/* ── Screen Upload & History ── */}
       <div className="space-y-3">
         <div
-          className="flex items-center justify-between cursor-pointer select-none"
+          className="flex items-center cursor-pointer select-none gap-2"
           onClick={() => setHistoryOpen((o) => !o)}
         >
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -261,21 +260,6 @@ export default function Screens() {
             Screen History
             <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${historyOpen ? "rotate-180" : ""}`} />
           </h2>
-          {historyOpen && (
-            <div onClick={(e) => e.stopPropagation()}>
-              <Select value={historyFilter} onValueChange={setHistoryFilter}>
-                <SelectTrigger className="w-40 h-8">
-                  <SelectValue placeholder="All screens" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Screens</SelectItem>
-                  {screens.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
         </div>
 
         {historyOpen && (
@@ -296,9 +280,7 @@ export default function Screens() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {runs
-                        .filter((r) => historyFilter === "all" || r.screen_id === historyFilter)
-                        .map((run) => {
+                      {runs.map((run) => {
                           const isRunExpanded = expandedRunId === run.id;
                           const matchedSymbols = run.matched_symbols ?? [];
                           const matchedSet = new Set(matchedSymbols.map((s) => s.toUpperCase()));
@@ -747,7 +729,7 @@ export default function Screens() {
               onClick={async () => {
                 if (deleteScreenConfirm) {
                   await deleteScreen(deleteScreenConfirm.id);
-                  if (historyFilter === deleteScreenConfirm.id) setHistoryFilter("all");
+                  
                   setDeleteScreenConfirm(null);
                   await refetchWatchlist();
                 }
