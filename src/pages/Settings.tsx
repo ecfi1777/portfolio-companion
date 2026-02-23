@@ -21,6 +21,7 @@ export default function Settings() {
   const [showResendKey, setShowResendKey] = useState(false);
   const [savedSection, setSavedSection] = useState<SectionKey | null>(null);
   const [portfolioTotal, setPortfolioTotal] = useState<number | null>(null);
+  const [tierError, setTierError] = useState<string | null>(null);
 
   useEffect(() => {
     setDraft(settings);
@@ -58,14 +59,17 @@ export default function Settings() {
   );
   const tierValid = Math.abs(tierTotal - 100) < 0.01;
 
+
   const saveSection = async (section: SectionKey) => {
     let next: PortfolioSettings;
     switch (section) {
       case "tiers":
         if (!tierValid) {
-          toast({ title: "Tier allocations must sum to 100%", variant: "destructive" });
+          setTierError(`Allocation targets must total 100% to save. Current total: ${tierTotal.toFixed(1)}%.`);
+          toast({ title: "Cannot save", description: `Allocation targets must total 100%. Current total: ${tierTotal.toFixed(1)}%.`, variant: "destructive" });
           return;
         }
+        setTierError(null);
         next = { ...settings, categories: draft.categories };
         break;
       case "api":
@@ -81,6 +85,9 @@ export default function Settings() {
         break;
     }
     await updateSettings(next);
+    if (section === "tiers") {
+      toast({ title: "Allocation targets saved successfully" });
+    }
     showSaved(section);
   };
 
@@ -322,12 +329,21 @@ export default function Settings() {
           })}
 
           {/* Grand total */}
-          <div className="border-t border-border pt-3 flex items-center justify-between">
-            <span className="text-sm font-medium">Total Allocation</span>
+          <div className={`border-t pt-3 flex items-center justify-between rounded-md px-2 -mx-2 ${
+            tierError && !tierValid ? "border-destructive bg-destructive/10 py-3" : "border-border"
+          }`}>
+            <span className={`text-sm font-medium ${tierError && !tierValid ? "text-destructive" : ""}`}>Total Allocation</span>
             <span className={`text-sm font-bold tabular-nums ${tierValid ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}>
               {tierTotal.toFixed(1)}%
             </span>
           </div>
+
+          {/* Error banner */}
+          {tierError && !tierValid && (
+            <div className="rounded-md bg-destructive/10 border border-destructive/30 px-3 py-2 text-sm text-destructive flex items-center gap-2">
+              <span className="font-medium">{tierError}</span>
+            </div>
+          )}
         </CardContent>
       </Card>
 
