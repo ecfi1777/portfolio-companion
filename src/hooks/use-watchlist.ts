@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "@/hooks/use-toast";
 import { getMarketCapCategory } from "@/lib/market-cap";
 import { fetchQuotes } from "@/lib/fmp-api";
+import { enrichWatchlistEntries } from "@/lib/watchlist-enrichment";
 
 export interface WatchlistEntry {
   id: string;
@@ -182,6 +183,14 @@ export function useWatchlist() {
 
     toast({ title: "Added", description: `${data.symbol.toUpperCase()} added to watchlist.` });
     await fetchAll();
+
+    // Fire-and-forget: screen cross-referencing + FMP enrichment
+    if (inserted) {
+      enrichWatchlistEntries(user.id, [data.symbol.toUpperCase().trim()], undefined, () => {
+        fetchAll();
+      });
+    }
+
     return inserted?.id ?? null;
   };
 

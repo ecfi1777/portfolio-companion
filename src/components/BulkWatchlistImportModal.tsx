@@ -8,8 +8,7 @@ import { Upload, FileText, AlertCircle } from "lucide-react";
 import { parseGenericCSV } from "@/lib/csv-generic-parser";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { lookupSymbol } from "@/lib/fmp-api";
-import { getMarketCapCategory } from "@/lib/market-cap";
+import { enrichWatchlistEntries } from "@/lib/watchlist-enrichment";
 
 interface ParsedRow {
   symbol: string;
@@ -167,49 +166,7 @@ export function BulkWatchlistImportModal({
       return;
     }
 
-    // Cross-reference newly added symbols against existing screen runs for tag assignments
     const importedSymbols = toInsert.map((r) => r.symbol);
-    try {
-      // Fetch the newly created watchlist entries
-      const { data: newEntries } = await supabase
-        .from("watchlist_entries")
-        .select("id, symbol")
-        .eq("user_id", userId)
-        .in("symbol", importedSymbols);
-
-      if (newEntries && newEntries.length > 0) {
-        // Fetch all screen runs that have auto-tags
-        const { data: screenRuns } = await supabase
-          .from("screen_runs")
-          .select("all_symbols, auto_tag_id")
-          .eq("user_id", userId)
-          .not("auto_tag_id", "is", null);
-
-        if (screenRuns && screenRuns.length > 0) {
-          const entryMap = new Map(newEntries.map((e) => [e.symbol, e.id]));
-          const tagAssignments: { watchlist_entry_id: string; tag_id: string }[] = [];
-
-          for (const run of screenRuns) {
-            const runSymbols = new Set(run.all_symbols ?? []);
-            for (const [symbol, entryId] of entryMap) {
-              if (runSymbols.has(symbol) && run.auto_tag_id) {
-                tagAssignments.push({ watchlist_entry_id: entryId, tag_id: run.auto_tag_id });
-              }
-            }
-          }
-
-          if (tagAssignments.length > 0) {
-            // Use upsert to skip any that already exist
-            await supabase
-              .from("watchlist_entry_tags")
-              .upsert(tagAssignments, { onConflict: "watchlist_entry_id,tag_id", ignoreDuplicates: true });
-          }
-        }
-      }
-    } catch (e) {
-      // Tag assignment is best-effort; don't block the import
-      console.error("Screen tag cross-reference failed:", e);
-    }
 
     setImporting(false);
 
@@ -221,32 +178,8 @@ export function BulkWatchlistImportModal({
     onImportComplete();
     handleClose(false);
 
-    // Async market cap enrichment — runs after modal closes
-    if (fmpApiKey && importedSymbols.length > 0) {
-      (async () => {
-        for (const sym of importedSymbols) {
-          try {
-            const profile = await lookupSymbol(sym, fmpApiKey);
-            if (profile && profile.mktCap) {
-              await supabase
-                .from("watchlist_entries")
-                .update({
-                  market_cap: profile.mktCap,
-                  market_cap_category: getMarketCapCategory(profile.mktCap),
-                  sector: profile.sector || null,
-                  industry: profile.industry || null,
-                })
-                .eq("user_id", userId)
-                .eq("symbol", sym);
-            }
-          } catch {
-            // Best-effort, continue with next symbol
-          }
-        }
-        // Refresh watchlist once all enrichment is done
-        onImportComplete();
-      })();
-    }
+    // Async enrichment — runs after modal closes
+    enrichWatchlistEntries(userId, importedSymbols, fmpApiKey, onImportComplete);
   }, [rows, selected, userId, duplicateCount, toast, onImportComplete, handleClose, fmpApiKey]);
 
   return (
