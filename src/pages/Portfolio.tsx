@@ -229,7 +229,7 @@ export default function Portfolio() {
   const [sortKey, setSortKey] = useState<SortKey>("current_value");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [deployOpen, setDeployOpen] = useState(false);
-  const { settings, loading: settingsLoading } = usePortfolioSettings();
+  const { settings, loading: settingsLoading, refetch: refetchSettings } = usePortfolioSettings();
   const fmpApiKey = settings.fmp_api_key;
   const [refreshing, setRefreshing] = useState(false);
 
@@ -668,6 +668,7 @@ export default function Portfolio() {
                               category={p.category}
                               tier={p.tier}
                               onUpdate={(cat, tier) => handleCategoryUpdate(p.id, cat, tier)}
+                              onTierSettingsChanged={refetchSettings}
                               tierCounts={tierCounts}
                               portfolioTotal={grandTotal}
                             />
