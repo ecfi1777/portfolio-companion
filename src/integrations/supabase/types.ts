@@ -14,6 +14,33 @@ export type Database = {
   }
   public: {
     Tables: {
+      import_history: {
+        Row: {
+          file_names: string[]
+          id: string
+          imported_at: string
+          total_positions: number
+          total_value: number
+          user_id: string
+        }
+        Insert: {
+          file_names?: string[]
+          id?: string
+          imported_at?: string
+          total_positions?: number
+          total_value?: number
+          user_id: string
+        }
+        Update: {
+          file_names?: string[]
+          id?: string
+          imported_at?: string
+          total_positions?: number
+          total_value?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
       portfolio_settings: {
         Row: {
           created_at: string

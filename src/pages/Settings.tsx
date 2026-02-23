@@ -7,6 +7,7 @@ import { usePortfolioSettings, DEFAULT_SETTINGS, getPerPositionTarget, type Port
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { RotateCcw, Save, Eye, EyeOff, Key, Mail, Check, Plus, Trash2 } from "lucide-react";
+import { ManagePortfolioSection } from "@/components/ManagePortfolioSection";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
@@ -444,6 +445,9 @@ export default function Settings() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Manage Portfolio */}
+      <ManagePortfolioSection />
     </div>
   );
 }
