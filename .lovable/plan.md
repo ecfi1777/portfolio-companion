@@ -1,47 +1,52 @@
 
 
-## Clickable Overlap Matrix Cells
+## Bulk Import to Watchlist
 
 ### Overview
-Make off-diagonal cells in the Screen-to-Screen Overlap matrix clickable. Clicking opens a modal showing the overlapping symbols between the two screens, with the ability to add symbols to the watchlist inline.
+Add a "Bulk Import" button next to the existing "Add to Watchlist" button on the Watchlist page. It opens a modal where users can upload a CSV file with Symbol, Company Name, and Price columns. The modal previews parsed rows, flags duplicates, and imports new entries in bulk.
 
-### Changes
+### New File: `src/components/BulkWatchlistImportModal.tsx`
 
-**1. New Component: `OverlapDetailModal.tsx`**
-- A dialog component that receives two screen runs and computes overlapping symbols
-- Header: "[Screen A] ∩ [Screen B] -- X symbols"
-- Table with columns: Symbol, Status
-- Status logic:
-  - Already on watchlist: green checkmark
-  - Already in portfolio: "Held" badge
-  - Neither: "+ Add" button
-- "+ Add" inserts a minimal `watchlist_entries` row (symbol + user_id + date_added) via `supabase.from("watchlist_entries").insert(...)`, then updates local state to show green checkmark without closing modal
-- Tracks newly-added symbols in local state so the button flips to checkmark immediately
+A new modal component with the following flow:
 
-**2. Modify `src/pages/Screens.tsx`**
-- Add state for the selected cell: `overlapModal` storing `{ rowIdx, colIdx } | null`
-- Make off-diagonal `TableCell` elements clickable with `cursor-pointer` and `onClick` handler
-- Render the `OverlapDetailModal` at the bottom, passing:
-  - The two screen runs (`latestByScreen[rowIdx]` and `latestByScreen[colIdx]`)
-  - Screen names and colors
-  - `watchlistSymbolSet` and `portfolioSymbolSet` for status checks
-  - The `getSymbols` helper output for each run
-  - A callback to add to watchlist (reusing `addEntry` from `useWatchlist` with minimal data, or direct insert for speed)
-- Diagonal cells remain non-clickable (no cursor change, no onClick)
+1. **File Upload Zone** -- Drag-and-drop area or click-to-browse, restricted to `.csv` files. Uses a standard `<input type="file" accept=".csv">` with a styled drop zone.
+
+2. **CSV Parsing** -- On file selection, read the file with `FileReader`, parse using the existing `parseGenericCSV` from `src/lib/csv-generic-parser.ts`. Auto-detect columns for Symbol, Company Name, and Price using header keyword matching (similar to `detectSymbolColumn`).
+
+3. **Duplicate Detection** -- Compare parsed symbols against `entries` (passed as a prop from the Watchlist page). Mark duplicates as "Skipped -- already on watchlist" (grayed out, unchecked, not selectable).
+
+4. **Preview Table** -- Show all parsed rows in a table with columns: Checkbox, Symbol, Company Name, Price, Status. New rows are checked by default. Duplicate rows show a muted "Already on watchlist" badge and are disabled.
+
+5. **Import Logic** -- On confirm, insert each selected new entry into `watchlist_entries` via Supabase:
+   - `symbol`: from CSV
+   - `company_name`: from CSV
+   - `price_when_added` and `current_price`: Price from CSV
+   - `date_added`: current timestamp (database default)
+   - No tags, no category, no alerts
+
+6. **Summary Toast** -- After import, show: "Added X new stocks, Y skipped (already on watchlist)." Close modal on success. Call `refetchWatchlist()` to refresh the list.
+
+### Changes to `src/pages/Watchlist.tsx`
+
+- Import the new `BulkWatchlistImportModal` component
+- Add state: `const [bulkOpen, setBulkOpen] = useState(false)`
+- Add a "Bulk Import" button next to the existing "Add to Watchlist" button in the header
+- Render the modal, passing `entries` (for duplicate detection), `user`, and `refetchWatchlist` as the post-import callback
 
 ### Technical Details
 
-**Overlap computation** (inside the modal):
-```
-const setA = new Set(getSymbols(runA).map(s => s.toUpperCase()));
-const overlap = getSymbols(runB).filter(s => setA.has(s.toUpperCase()));
-```
+**Column Detection Logic:**
+- Symbol: headers containing "symbol", "ticker", "stock"
+- Company Name: headers containing "name", "company", "description", "security"
+- Price: headers containing "price", "last", "close", "value"
+- Falls back to column indices 0, 1, 2 if no matches
 
-**Quick-add behavior**: Use `addEntry({ symbol })` from the existing `useWatchlist` hook, which handles duplicate detection and toasts. Track added symbols in a local `Set` within the modal so the UI updates instantly. After closing the modal, the watchlist refetches automatically.
+**Insert Strategy:**
+- Batch insert using `supabase.from("watchlist_entries").insert([...rows])` for efficiency
+- Each row includes `user_id` from auth context
+- Uses the existing `market_cap_category` as null (no FMP lookup during bulk import)
 
-**Cell styling**: Off-diagonal cells get `cursor-pointer hover:ring-1 hover:ring-primary/50` to indicate clickability. Diagonal cells unchanged.
-
-### Files to create/modify
-- Create: `src/components/OverlapDetailModal.tsx`
-- Modify: `src/pages/Screens.tsx` (add state, click handler, render modal)
+**Error Handling:**
+- If any row fails (e.g., unique constraint on duplicate symbol), it is caught and counted as skipped
+- Toast shows final tally of added vs skipped
 
