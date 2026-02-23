@@ -15,6 +15,7 @@ import { useScreens, type ScreenRun } from "@/hooks/use-screens";
 import { useWatchlist, type WatchlistEntry } from "@/hooks/use-watchlist";
 import { AddToWatchlistModal, type AddToWatchlistData } from "@/components/AddToWatchlistModal";
 import { ScreenUploadModal } from "@/components/ScreenUploadModal";
+import { OverlapDetailModal } from "@/components/OverlapDetailModal";
 import { usePortfolioSettings } from "@/hooks/use-portfolio-settings";
 import { useAlerts } from "@/hooks/use-alerts";
 import { supabase } from "@/integrations/supabase/client";
@@ -47,6 +48,7 @@ export default function Screens() {
   const [screenOverlapOpen, setScreenOverlapOpen] = useState(true);
   const [portfolioOverlapOpen, setPortfolioOverlapOpen] = useState(true);
   const [watchlistOverlapOpen, setWatchlistOverlapOpen] = useState(true);
+  const [overlapModal, setOverlapModal] = useState<{ rowIdx: number; colIdx: number } | null>(null);
 
   // Portfolio positions
   const [positions, setPositions] = useState<Position[]>([]);
@@ -415,12 +417,13 @@ export default function Screens() {
                             return (
                               <TableCell
                                 key={col.id}
-                                className={`text-center text-sm tabular-nums ${isDiag ? "bg-muted font-medium" : ""}`}
+                                className={`text-center text-sm tabular-nums ${isDiag ? "bg-muted font-medium" : "cursor-pointer hover:ring-1 hover:ring-primary/50"}`}
                                 style={
                                   !isDiag && intensity > 0
                                     ? { backgroundColor: `hsl(var(--primary) / ${(intensity * 0.3 + 0.05).toFixed(2)})` }
                                     : undefined
                                 }
+                                onClick={!isDiag && count > 0 ? () => setOverlapModal({ rowIdx: ri, colIdx: ci }) : undefined}
                               >
                                 {count}
                               </TableCell>
@@ -432,6 +435,30 @@ export default function Screens() {
                   </Table>
                 </div>
               </Card>
+
+              {overlapModal && (() => {
+                const rowRun = latestByScreen[overlapModal.rowIdx];
+                const colRun = latestByScreen[overlapModal.colIdx];
+                return (
+                  <OverlapDetailModal
+                    open={true}
+                    onOpenChange={(v) => { if (!v) setOverlapModal(null); }}
+                    screenA={{
+                      name: rowRun.screen?.name ?? "Screen",
+                      color: SCREEN_COLORS[overlapModal.rowIdx % SCREEN_COLORS.length],
+                      symbols: getSymbols(rowRun),
+                    }}
+                    screenB={{
+                      name: colRun.screen?.name ?? "Screen",
+                      color: SCREEN_COLORS[overlapModal.colIdx % SCREEN_COLORS.length],
+                      symbols: getSymbols(colRun),
+                    }}
+                    watchlistSymbols={watchlistSymbolSet}
+                    portfolioSymbols={portfolioSymbolSet}
+                    onAdd={(sym) => addEntry({ symbol: sym })}
+                  />
+                );
+              })()}
 
               {/* Symbols in Multiple Screens */}
               {crossScreenData.length > 0 && (
