@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "@/hooks/use-toast";
 import { getMarketCapCategory } from "@/lib/market-cap";
-import { fetchQuotes } from "@/lib/fmp-api";
+import { fetchProfilesBatched } from "@/lib/fmp-api";
 import { enrichWatchlistEntries } from "@/lib/watchlist-enrichment";
 
 export interface WatchlistEntry {
@@ -249,32 +249,57 @@ export function useWatchlist() {
     await fetchAll();
   };
 
-  const refreshPrices = useCallback(async (apiKey: string) => {
-    if (!user || entries.length === 0 || !apiKey) return;
+  const refreshPrices = useCallback(async (
+    apiKey: string,
+    onProgress?: (done: number, total: number) => void
+  ): Promise<{ succeeded: number; failed: number; total: number }> => {
+    if (!user || entries.length === 0 || !apiKey) return { succeeded: 0, failed: 0, total: 0 };
     const symbols = entries.map((e) => e.symbol);
-    const quotes = await fetchQuotes(symbols, apiKey);
-    if (quotes.length === 0) return;
+    const profiles = await fetchProfilesBatched(symbols, apiKey, onProgress);
+    if (profiles.length === 0) return { succeeded: 0, failed: 0, total: symbols.length };
     const now = new Date().toISOString();
-    for (const q of quotes) {
+    const profileMap = new Map(profiles.map((p) => [p.symbol.toUpperCase(), p]));
+
+    for (const p of profiles) {
+      const updateData: Record<string, unknown> = {
+        current_price: p.price,
+        previous_close: p.previousClose,
+        last_price_update: now,
+      };
+      if (p.mktCap) {
+        updateData.market_cap = p.mktCap;
+        updateData.market_cap_category = getMarketCapCategory(p.mktCap);
+      }
+      if (p.companyName) updateData.company_name = p.companyName;
+      if (p.sector) updateData.sector = p.sector;
+      if (p.industry) updateData.industry = p.industry;
+
       await supabase
         .from("watchlist_entries")
-        .update({
-          current_price: q.price,
-          previous_close: q.previousClose,
-          last_price_update: now,
-        })
+        .update(updateData)
         .eq("user_id", user.id)
-        .eq("symbol", q.symbol);
+        .eq("symbol", p.symbol);
     }
+
     // Update local state
     setEntries((prev) =>
       prev.map((e) => {
-        const q = quotes.find((qq) => qq.symbol === e.symbol);
-        if (!q) return e;
-        return { ...e, current_price: q.price, previous_close: q.previousClose, last_price_update: now };
+        const p = profileMap.get(e.symbol.toUpperCase());
+        if (!p) return e;
+        return {
+          ...e,
+          current_price: p.price,
+          previous_close: p.previousClose,
+          last_price_update: now,
+          ...(p.mktCap ? { market_cap: p.mktCap, market_cap_category: getMarketCapCategory(p.mktCap) } : {}),
+          ...(p.companyName ? { company_name: p.companyName } : {}),
+          ...(p.sector ? { sector: p.sector } : {}),
+          ...(p.industry ? { industry: p.industry } : {}),
+        };
       })
     );
-    return quotes.length;
+
+    return { succeeded: profiles.length, failed: symbols.length - profiles.length, total: symbols.length };
   }, [user, entries]);
 
   return {
