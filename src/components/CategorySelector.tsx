@@ -26,11 +26,12 @@ interface CategorySelectorProps {
   category: Category;
   tier: Tier;
   onUpdate: (category: Category, tier: Tier) => void;
+  onTierSettingsChanged?: () => void;
   tierCounts?: Record<string, number>;
   portfolioTotal?: number;
 }
 
-export function CategorySelector({ positionId, category, tier, onUpdate, tierCounts = {}, portfolioTotal }: CategorySelectorProps) {
+export function CategorySelector({ positionId, category, tier, onUpdate, onTierSettingsChanged, tierCounts = {}, portfolioTotal }: CategorySelectorProps) {
   const { toast } = useToast();
   const { settings, updateSettings } = usePortfolioSettings();
   const [saving, setSaving] = useState(false);
@@ -86,7 +87,7 @@ export function CategorySelector({ positionId, category, tier, onUpdate, tierCou
   })();
 
   const handleSaveTier = async () => {
-    if (!currentTierConfig || editAlloc == null || editMax == null) return;
+    if (!currentTierConfig || editMax == null) return;
     setTierSaving(true);
     try {
       const newCategories = settings.categories.map((cat) => {
@@ -95,24 +96,14 @@ export function CategorySelector({ positionId, category, tier, onUpdate, tierCou
           ...cat,
           tiers: cat.tiers.map((t) => {
             if (t.key !== currentTierConfig.tier.key) return t;
-            return { ...t, allocation_pct: editAlloc, max_positions: Math.max(1, Math.floor(editMax)) };
+            return { ...t, max_positions: Math.max(1, Math.floor(editMax)) };
           }),
         };
       });
 
-      // Check total
-      const total = newCategories.reduce(
-        (sum, cat) => sum + cat.tiers.reduce((s, t) => s + t.allocation_pct, 0),
-        0
-      );
-      if (Math.abs(total - 100) > 0.01) {
-        toast({ title: "Cannot save", description: `Total allocation would be ${total.toFixed(1)}% (must be 100%).`, variant: "destructive" });
-        setTierSaving(false);
-        return;
-      }
-
       await updateSettings({ ...settings, categories: newCategories });
       setTierSaved(true);
+      onTierSettingsChanged?.();
       setTimeout(() => setTierSaved(false), 2000);
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -210,11 +201,10 @@ export function CategorySelector({ positionId, category, tier, onUpdate, tierCou
                   <Label className="text-[11px]">Allocation %</Label>
                   <Input
                     type="number"
-                    step="0.5"
-                    min="0"
-                    value={editAlloc ?? currentTierConfig.tier.allocation_pct}
-                    onChange={(e) => setEditAlloc(Number(e.target.value))}
-                    className="h-7 text-xs"
+                    value={currentTierConfig.tier.allocation_pct}
+                    readOnly
+                    disabled
+                    className="h-7 text-xs opacity-60"
                   />
                 </div>
                 <div className="space-y-1">
@@ -229,11 +219,11 @@ export function CategorySelector({ positionId, category, tier, onUpdate, tierCou
                   />
                 </div>
               </div>
-              {editAlloc != null && editMax != null && editMax > 0 && (
+              {editMax != null && editMax > 0 && (
                 <p className="text-[11px] text-muted-foreground">
-                  → {fmtPct(editAlloc / editMax)} per position
+                  → {fmtPct(currentTierConfig.tier.allocation_pct / editMax)} per position
                   {portfolioTotal != null && (
-                    <span> · {fmtDollar((editAlloc / 100 / editMax) * portfolioTotal)}</span>
+                    <span> · {fmtDollar((currentTierConfig.tier.allocation_pct / 100 / editMax) * portfolioTotal)}</span>
                   )}
                 </p>
               )}

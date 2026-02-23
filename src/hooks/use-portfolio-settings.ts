@@ -178,50 +178,51 @@ export function usePortfolioSettings() {
   const [settings, setSettings] = useState<PortfolioSettings>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const fetchSettings = useCallback(async () => {
     if (!user) return;
-    (async () => {
-      try {
-        const { data, error } = await supabase
-          .from("portfolio_settings")
-          .select("settings")
-          .eq("user_id", user.id)
-          .maybeSingle();
+    try {
+      const { data, error } = await supabase
+        .from("portfolio_settings")
+        .select("settings")
+        .eq("user_id", user.id)
+        .maybeSingle();
 
-        if (error) throw error;
+      if (error) throw error;
 
-        if (data) {
-          const raw = data.settings as unknown as Record<string, unknown>;
-          const migrated = migrateOldSettings(raw);
+      if (data) {
+        const raw = data.settings as unknown as Record<string, unknown>;
+        const migrated = migrateOldSettings(raw);
 
-          // Only auto-save for legacy tier_goals format
-          // Do NOT auto-save target_pct -> allocation_pct migration (let user review)
-          if (!Array.isArray(raw.categories)) {
-            await supabase
-              .from("portfolio_settings")
-              .update({ settings: migrated as unknown as Record<string, never> })
-              .eq("user_id", user.id);
-          }
-
-          setSettings(migrated);
-        } else {
-          await supabase.from("portfolio_settings").insert([{
-            user_id: user.id,
-            settings: DEFAULT_SETTINGS as unknown as Record<string, never>,
-          }]);
+        // Only auto-save for legacy tier_goals format
+        if (!Array.isArray(raw.categories)) {
+          await supabase
+            .from("portfolio_settings")
+            .update({ settings: migrated as unknown as Record<string, never> })
+            .eq("user_id", user.id);
         }
-      } catch (err) {
-        console.error("Failed to load portfolio settings:", err);
-        toast({
-          title: "Settings load failed",
-          description: "Could not load portfolio settings. Using defaults.",
-          variant: "destructive",
-        });
-      } finally {
-        setLoading(false);
+
+        setSettings(migrated);
+      } else {
+        await supabase.from("portfolio_settings").insert([{
+          user_id: user.id,
+          settings: DEFAULT_SETTINGS as unknown as Record<string, never>,
+        }]);
       }
-    })();
+    } catch (err) {
+      console.error("Failed to load portfolio settings:", err);
+      toast({
+        title: "Settings load failed",
+        description: "Could not load portfolio settings. Using defaults.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   }, [user]);
+
+  useEffect(() => {
+    fetchSettings();
+  }, [fetchSettings]);
 
   const updateSettings = useCallback(
     async (next: PortfolioSettings) => {
@@ -235,5 +236,5 @@ export function usePortfolioSettings() {
     [user]
   );
 
-  return { settings, updateSettings, loading };
+  return { settings, updateSettings, loading, refetch: fetchSettings };
 }
