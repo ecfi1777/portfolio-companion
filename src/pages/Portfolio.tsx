@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback, Fragment, useMemo } from "react";
-import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { DollarSign, TrendingUp, Hash, ChevronRight, Upload, ArrowUpDown, Tag, Banknote, ChevronDown, Check, AlertTriangle, Trash2, Calendar, RefreshCw, Clock, Settings } from "lucide-react";
 import { UpdatePortfolioModal } from "@/components/UpdatePortfolioModal";
+import { ManagePortfolioDialog } from "@/components/ManagePortfolioSection";
 import { CategorySelector } from "@/components/CategorySelector";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { usePortfolioSettings, type PortfolioSettings, getCategoryTargets, getTierTarget, getCategoryForTier, buildTierOrder } from "@/hooks/use-portfolio-settings";
@@ -222,6 +222,7 @@ export default function Portfolio() {
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("current_value");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [deployOpen, setDeployOpen] = useState(false);
@@ -454,16 +455,15 @@ export default function Portfolio() {
             <Upload className="mr-2 h-4 w-4" />
             Update Portfolio
           </Button>
-          <Button variant="outline" size="sm" asChild>
-            <Link to="/settings#manage-portfolio">
-              <Settings className="mr-1.5 h-4 w-4" />
-              Manage
-            </Link>
+          <Button variant="outline" size="sm" onClick={() => setManageOpen(true)}>
+            <Settings className="mr-1.5 h-4 w-4" />
+            Manage
           </Button>
         </div>
       </div>
 
       <UpdatePortfolioModal open={modalOpen} onOpenChange={setModalOpen} onSuccess={fetchData} />
+      <ManagePortfolioDialog open={manageOpen} onOpenChange={setManageOpen} />
 
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-4">
