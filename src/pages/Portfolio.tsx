@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, Fragment, useMemo } from "react";
+import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { DollarSign, TrendingUp, Hash, ChevronRight, Upload, ArrowUpDown, Tag, Banknote, ChevronDown, Check, AlertTriangle, Trash2, Calendar, RefreshCw, Clock } from "lucide-react";
+import { DollarSign, TrendingUp, Hash, ChevronRight, Upload, ArrowUpDown, Tag, Banknote, ChevronDown, Check, AlertTriangle, Trash2, Calendar, RefreshCw, Clock, Settings } from "lucide-react";
 import { UpdatePortfolioModal } from "@/components/UpdatePortfolioModal";
 import { CategorySelector } from "@/components/CategorySelector";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -452,6 +453,12 @@ export default function Portfolio() {
           <Button onClick={() => setModalOpen(true)}>
             <Upload className="mr-2 h-4 w-4" />
             Update Portfolio
+          </Button>
+          <Button variant="outline" size="sm" asChild>
+            <Link to="/settings#manage-portfolio">
+              <Settings className="mr-1.5 h-4 w-4" />
+              Manage
+            </Link>
           </Button>
         </div>
       </div>

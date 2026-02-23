@@ -447,7 +447,9 @@ export default function Settings() {
       </Card>
 
       {/* Manage Portfolio */}
-      <ManagePortfolioSection />
+      <div id="manage-portfolio">
+        <ManagePortfolioSection />
+      </div>
     </div>
   );
 }
