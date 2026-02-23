@@ -421,13 +421,13 @@ export default function Screens() {
                     <button
                       key={r.id}
                       onClick={() => toggleScreenFilter(idx)}
-                      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium border transition-all ${
-                        selected ? "ring-1 ring-offset-1 ring-ring" : "opacity-40"
+                      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium border-2 transition-all ${
+                        selected ? "shadow-sm" : "opacity-40 border-transparent"
                       }`}
                       style={{
                         backgroundColor: selected ? `${color}20` : "transparent",
                         color: color,
-                        borderColor: `${color}40`,
+                        borderColor: selected ? color : "transparent",
                       }}
                     >
                       <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
