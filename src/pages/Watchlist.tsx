@@ -455,6 +455,7 @@ export default function Watchlist() {
         existingSymbols={new Set(entries.map((e) => e.symbol.toUpperCase()))}
         userId={user?.id ?? ""}
         onImportComplete={refetchWatchlist}
+        fmpApiKey={fmpApiKey}
       />
 
       {/* Search + Filters */}
