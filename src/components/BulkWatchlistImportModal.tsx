@@ -156,12 +156,58 @@ export function BulkWatchlistImportModal({
 
     setImporting(true);
     const { error: insertError } = await supabase.from("watchlist_entries").upsert(toInsert, { onConflict: "user_id,symbol", ignoreDuplicates: true });
-    setImporting(false);
 
     if (insertError) {
+      setImporting(false);
       toast({ title: "Import failed", description: insertError.message, variant: "destructive" });
       return;
     }
+
+    // Cross-reference newly added symbols against existing screen runs for tag assignments
+    const importedSymbols = toInsert.map((r) => r.symbol);
+    try {
+      // Fetch the newly created watchlist entries
+      const { data: newEntries } = await supabase
+        .from("watchlist_entries")
+        .select("id, symbol")
+        .eq("user_id", userId)
+        .in("symbol", importedSymbols);
+
+      if (newEntries && newEntries.length > 0) {
+        // Fetch all screen runs that have auto-tags
+        const { data: screenRuns } = await supabase
+          .from("screen_runs")
+          .select("all_symbols, auto_tag_id")
+          .eq("user_id", userId)
+          .not("auto_tag_id", "is", null);
+
+        if (screenRuns && screenRuns.length > 0) {
+          const entryMap = new Map(newEntries.map((e) => [e.symbol, e.id]));
+          const tagAssignments: { watchlist_entry_id: string; tag_id: string }[] = [];
+
+          for (const run of screenRuns) {
+            const runSymbols = new Set(run.all_symbols ?? []);
+            for (const [symbol, entryId] of entryMap) {
+              if (runSymbols.has(symbol) && run.auto_tag_id) {
+                tagAssignments.push({ watchlist_entry_id: entryId, tag_id: run.auto_tag_id });
+              }
+            }
+          }
+
+          if (tagAssignments.length > 0) {
+            // Use upsert to skip any that already exist
+            await supabase
+              .from("watchlist_entry_tags")
+              .upsert(tagAssignments, { onConflict: "watchlist_entry_id,tag_id", ignoreDuplicates: true });
+          }
+        }
+      }
+    } catch (e) {
+      // Tag assignment is best-effort; don't block the import
+      console.error("Screen tag cross-reference failed:", e);
+    }
+
+    setImporting(false);
 
     toast({
       title: "Bulk import complete",
