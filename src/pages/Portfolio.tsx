@@ -78,15 +78,18 @@ function getCapitalToGoal(
   currentValue: number,
   grandTotal: number,
   settings: PortfolioSettings
-): { label: string; type: "below" | "at" | "above_cap" } | null {
+): { label: string; type: "below" | "at" | "above" } | null {
   if (!tier) return null;
   const goal = getTierGoal(tier, settings);
   if (goal == null) return null;
 
   const goalValue = (goal / 100) * grandTotal;
   const diff = goalValue - currentValue;
-  if (diff <= 0) return { label: "At goal", type: "at" };
-  return { label: `${fmt(diff)} to goal`, type: "below" };
+  const tolerance = goalValue * 0.02; // ±2% band
+
+  if (Math.abs(diff) <= tolerance) return { label: "At goal", type: "at" };
+  if (diff > 0) return { label: `↑ ${fmt(diff)}`, type: "below" };
+  return { label: `↓ ${fmt(Math.abs(diff))}`, type: "above" };
 }
 
 function PositionDetailPanel({
@@ -646,12 +649,14 @@ export default function Portfolio() {
                             <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
                               <Check className="h-3 w-3" /> At goal
                             </span>
-                          ) : capitalToGoal.type === "above_cap" ? (
-                            <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400" title="Consider trimming or reclassifying to Core">
-                              <AlertTriangle className="h-3 w-3" /> {capitalToGoal.label}
+                          ) : capitalToGoal.type === "above" ? (
+                            <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                              {capitalToGoal.label}
                             </span>
                           ) : (
-                            <span className="text-muted-foreground">{capitalToGoal.label}</span>
+                            <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                              {capitalToGoal.label}
+                            </span>
                           )}
                         </TableCell>
                         <TableCell>
