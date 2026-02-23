@@ -202,7 +202,7 @@ export default function Settings() {
                 )}
               </CardDescription>
             </div>
-            <SectionActions section="tiers" disabled={!tierValid} />
+            <SectionActions section="tiers" />
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
