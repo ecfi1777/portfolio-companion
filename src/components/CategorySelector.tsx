@@ -9,13 +9,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { usePortfolioSettings, getPerPositionTarget, type CategoryConfig } from "@/hooks/use-portfolio-settings";
-import { Check, Settings } from "lucide-react";
+import { Check, Settings, Info } from "lucide-react";
 import type { Database } from "@/integrations/supabase/types";
 
 type Category = Database["public"]["Enums"]["position_category"] | null;
@@ -172,10 +172,9 @@ export function CategorySelector({ positionId, category, tier, onUpdate, tierCou
   const count = tierCounts[currentTierConfig.tier.key] ?? 0;
 
   return (
-    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-      <HoverCard
-        openDelay={300}
-        closeDelay={200}
+    <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+      {selectElement}
+      <Popover
         onOpenChange={(open) => {
           if (open && currentTierConfig) {
             setEditAlloc(currentTierConfig.tier.allocation_pct);
@@ -184,10 +183,12 @@ export function CategorySelector({ positionId, category, tier, onUpdate, tierCou
           }
         }}
       >
-        <HoverCardTrigger asChild>
-          {selectElement}
-        </HoverCardTrigger>
-        <HoverCardContent className="w-64 p-3" side="left" align="start">
+        <PopoverTrigger asChild>
+          <button className="p-0.5 rounded hover:bg-muted/60 text-muted-foreground hover:text-foreground transition-colors">
+            <Info className="h-3.5 w-3.5" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className="w-64 p-3" side="left" align="start">
           <div className="space-y-3">
             <div>
               <p className="text-sm font-semibold">{currentTierConfig.cat.display_name} · {currentTierConfig.tier.name}</p>
@@ -250,8 +251,8 @@ export function CategorySelector({ positionId, category, tier, onUpdate, tierCou
               </Button>
             </div>
           </div>
-        </HoverCardContent>
-      </HoverCard>
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }
