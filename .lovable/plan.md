@@ -1,94 +1,93 @@
 
 
-## Enrichment Error Reporting, Rate Limiting, and Re-enrich Button
+## Replace batch-quote-short with /stable/profile for Price Refresh
 
-### 1. Update `enrichWatchlistEntries` in `src/lib/watchlist-enrichment.ts`
+### Problem
+The `refreshPrices` function uses FMP's `/stable/batch-quote-short` endpoint, which returns 402 (Restricted Endpoint) on the Basic plan. This means `current_price` and `previous_close` never update, so Day % and Since Add % always show dashes.
 
-**Rate limiting**: Add a 200ms delay between each FMP API call using a simple `await new Promise(r => setTimeout(r, 200))`.
+### Solution
 
-**Error tracking**: Instead of silently catching errors, track success/fail counts during the FMP enrichment loop. Return a result object `{ succeeded: number; failed: number; total: number }` so callers can display appropriate notifications.
+#### 1. New function in `src/lib/fmp-api.ts`: `fetchProfilesBatched`
 
-Updated signature:
-```text
-export async function enrichWatchlistEntries(
-  userId: string,
-  symbols: string[],
-  fmpApiKey?: string,
-  onComplete?: (result: EnrichmentResult) => void
-): Promise<EnrichmentResult>
+Add a new exported function that fetches price and profile data using the `/stable/profile` endpoint (which works on the Basic plan):
 
-type EnrichmentResult = { succeeded: number; failed: number; total: number }
+- Accepts a list of symbols, an API key, and an optional `onProgress` callback
+- First attempts comma-separated batches of 20 symbols (e.g., `/stable/profile?symbol=AAPL,GOOGL,...&apikey=KEY`)
+- If the first batch returns empty/error, falls back to one-at-a-time mode with 200ms delays
+- Calls `onProgress(completed, total)` after each successful/failed fetch
+- Returns an array of `ProfileData` results (reuses existing `ProfileData` interface, adding a `previousClose` field)
+- Populates the profile cache as a side benefit
+
+Update the `ProfileData` interface to include `previousClose`:
 ```
-
-Key changes:
-- Add `await delay(200)` between each FMP call
-- Count successes and failures in the FMP loop
-- Pass the result to `onComplete` and return it
-- Screen cross-referencing remains best-effort (errors logged, not counted in result)
-
-### 2. Update `src/components/BulkWatchlistImportModal.tsx`
-
-No structural changes needed. The `enrichWatchlistEntries` call already fires after import. The `onImportComplete` callback will now receive the enrichment result, but since `BulkWatchlistImportModal` passes `onImportComplete` directly (which is `refetchWatchlist`), the toast notification will be handled at the hook/page level instead.
-
-Update: wrap the enrichment call so it shows a toast after completion if there were failures:
-- Import `toast` from `@/hooks/use-toast`
-- After `enrichWatchlistEntries` resolves, check the result and show a toast like: "Market data enrichment: X of Y succeeded, Z failed (API limit). Use Re-enrich to retry."
-
-### 3. Update `src/hooks/use-watchlist.ts`
-
-In the `addEntry` function's fire-and-forget enrichment call:
-- Handle the enrichment result from the callback
-- Show a toast if any symbols failed enrichment
-
-### 4. Add "Re-enrich" button in `src/pages/Watchlist.tsx`
-
-Place a "Re-enrich" button next to the existing "Refresh" button in the watchlist header.
-
-Behavior:
-- Only enabled when there are entries with `market_cap === null` and an FMP API key is set
-- On click, queries entries where `market_cap` is null, collects their symbols
-- Calls `enrichWatchlistEntries` with only those symbols
-- Shows a spinner while running
-- On completion, shows a toast with success/fail counts
-- Calls `refetchWatchlist` to refresh the table
-
-The button will show a count badge (e.g., "Re-enrich (42)") indicating how many entries are missing market cap data.
-
-### Technical Details
-
-**New helper in `watchlist-enrichment.ts`:**
-```typescript
-const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
-```
-
-**FMP loop changes:**
-```text
-let succeeded = 0;
-let failed = 0;
-for (const sym of symbols) {
-  try {
-    const profile = await lookupSymbol(sym, fmpApiKey);
-    if (profile?.mktCap) {
-      await supabase.from("watchlist_entries").update({...}).eq(...);
-      succeeded++;
-    } else {
-      failed++;
-    }
-  } catch {
-    failed++;
-  }
-  if (sym !== symbols[symbols.length - 1]) await delay(200);
+export interface ProfileData {
+  symbol: string;
+  companyName: string;
+  price: number;
+  previousClose: number;  // NEW
+  industry: string;
+  sector: string;
+  mktCap: number;
 }
 ```
 
-**Re-enrich button in Watchlist.tsx:**
-- New state: `reEnriching: boolean`
-- Compute `nullCapCount` from entries where `market_cap` is null
-- Button disabled when `nullCapCount === 0` or no API key or already running
-- On click: gather null-cap symbols, call `enrichWatchlistEntries`, show result toast, refetch
+Also update `lookupSymbol` to map `previousClose` from the API response.
 
-**Toast notification format:**
-- All succeeded: "Market data enrichment complete: X symbols updated."
-- Some failed: "Market data enrichment: X of Y succeeded, Z failed (API limit). Use Re-enrich to retry."
-- No FMP key: button shows tooltip "Set FMP API key in Settings"
+#### 2. Rewrite `refreshPrices` in `src/hooks/use-watchlist.ts`
+
+Replace the current implementation that calls `fetchQuotes` with:
+
+- Accept an optional `onProgress` callback parameter: `refreshPrices(apiKey: string, onProgress?: (done: number, total: number) => void)`
+- Call `fetchProfilesBatched(symbols, apiKey, onProgress)` instead of `fetchQuotes`
+- Map profile results to DB updates: `current_price`, `previous_close`, `last_price_update`, plus `market_cap`, `market_cap_category`, `company_name`, `sector`, `industry` (re-enrichment as a side benefit)
+- Return an `EnrichmentResult` object (`{ succeeded, failed, total }`) instead of just a count
+- Update local state for immediate UI feedback
+
+#### 3. Progress indicator in `src/pages/Watchlist.tsx`
+
+- Add state: `refreshProgress: { done: number; total: number } | null`
+- Pass a progress callback to `refreshPrices` that updates this state
+- Display progress on or near the Refresh button: when refreshing, show "Refreshing 45/250..." text instead of just a spinner
+- Clear progress state when refresh completes
+- Show a toast on completion with success/fail counts (same pattern as Re-enrich)
+
+#### 4. Auto-refresh on page load
+
+No changes to trigger logic (lines 349-355). The `refreshPrices` call already happens there. Since the function signature gains an optional parameter, existing call sites still work. The progress indicator will show during auto-refresh too.
+
+### What does NOT change
+
+- Day %, Since Add %, and all display column calculations remain untouched
+- Refresh button placement and general UI unchanged
+- Re-enrich button remains separate and unchanged
+- The `fetchQuotes` function stays in `fmp-api.ts` (not removed, just no longer called from `refreshPrices`)
+
+### Technical Details
+
+**`fetchProfilesBatched` logic:**
+```text
+1. Split symbols into batches of 20
+2. For first batch, try comma-separated: /stable/profile?symbol=SYM1,SYM2,...&apikey=KEY
+3. If response is OK and returns array with data -> batch mode works, continue with remaining batches
+4. If response fails or returns empty -> switch to single-symbol mode for all remaining symbols
+5. In single-symbol mode: call lookupSymbol() one at a time with 200ms delay
+6. Call onProgress after each batch or single-symbol call
+```
+
+**DB update per symbol in refreshPrices:**
+```text
+current_price      <- profile.price
+previous_close     <- profile.previousClose
+market_cap         <- profile.mktCap
+market_cap_category <- getMarketCapCategory(profile.mktCap)
+company_name       <- profile.companyName (if truthy)
+sector             <- profile.sector (if truthy)
+industry           <- profile.industry (if truthy)
+last_price_update  <- now()
+```
+
+**Files modified:**
+- `src/lib/fmp-api.ts` -- add `previousClose` to `ProfileData`, add `fetchProfilesBatched`, update `lookupSymbol`
+- `src/hooks/use-watchlist.ts` -- rewrite `refreshPrices` to use profiles, add progress callback, return `EnrichmentResult`
+- `src/pages/Watchlist.tsx` -- add progress state, pass callback, display progress text, show result toast
 
