@@ -1,52 +1,69 @@
 
 
-## Bulk Import to Watchlist
+## Shared Post-Add Enrichment for Watchlist Entries
 
 ### Overview
-Add a "Bulk Import" button next to the existing "Add to Watchlist" button on the Watchlist page. It opens a modal where users can upload a CSV file with Symbol, Company Name, and Price columns. The modal previews parsed rows, flags duplicates, and imports new entries in bulk.
+Extract the screen cross-referencing and FMP market cap enrichment logic into a shared utility, then call it from both the Bulk Import and single Add to Watchlist flows. This ensures every new watchlist entry gets screen tags and market data regardless of how it was added.
 
-### New File: `src/components/BulkWatchlistImportModal.tsx`
+### New File: `src/lib/watchlist-enrichment.ts`
 
-A new modal component with the following flow:
+A shared async function that takes a user ID, list of symbols, an FMP API key (optional), and an onComplete callback:
 
-1. **File Upload Zone** -- Drag-and-drop area or click-to-browse, restricted to `.csv` files. Uses a standard `<input type="file" accept=".csv">` with a styled drop zone.
+```
+enrichWatchlistEntries(userId, symbols, fmpApiKey?, onComplete?)
+```
 
-2. **CSV Parsing** -- On file selection, read the file with `FileReader`, parse using the existing `parseGenericCSV` from `src/lib/csv-generic-parser.ts`. Auto-detect columns for Symbol, Company Name, and Price using header keyword matching (similar to `detectSymbolColumn`).
+It performs two tasks:
 
-3. **Duplicate Detection** -- Compare parsed symbols against `entries` (passed as a prop from the Watchlist page). Mark duplicates as "Skipped -- already on watchlist" (grayed out, unchecked, not selectable).
+1. **Screen cross-referencing** -- Fetches the user's watchlist entry IDs for the given symbols, then queries all `screen_runs` with `auto_tag_id`. For each match between a symbol and a screen run's `all_symbols`, upserts a `watchlist_entry_tags` record (with `ignoreDuplicates`).
 
-4. **Preview Table** -- Show all parsed rows in a table with columns: Checkbox, Symbol, Company Name, Price, Status. New rows are checked by default. Duplicate rows show a muted "Already on watchlist" badge and are disabled.
+2. **FMP enrichment** -- For each symbol, calls `lookupSymbol` to get market cap, sector, and industry. Updates the `watchlist_entries` row with those values and the computed `market_cap_category`.
 
-5. **Import Logic** -- On confirm, insert each selected new entry into `watchlist_entries` via Supabase:
-   - `symbol`: from CSV
-   - `company_name`: from CSV
-   - `price_when_added` and `current_price`: Price from CSV
-   - `date_added`: current timestamp (database default)
-   - No tags, no category, no alerts
+Both tasks are best-effort (errors are caught and logged, never block the caller).
 
-6. **Summary Toast** -- After import, show: "Added X new stocks, Y skipped (already on watchlist)." Close modal on success. Call `refetchWatchlist()` to refresh the list.
+### Changes to `src/components/BulkWatchlistImportModal.tsx`
 
-### Changes to `src/pages/Watchlist.tsx`
+- Remove the inline screen cross-referencing code (lines 170-212) and the inline FMP enrichment code (lines 224-249)
+- Remove imports for `lookupSymbol` and `getMarketCapCategory`
+- Import and call `enrichWatchlistEntries` after the upsert succeeds, passing the imported symbols
+- The enrichment runs asynchronously after the modal closes (existing behavior preserved)
 
-- Import the new `BulkWatchlistImportModal` component
-- Add state: `const [bulkOpen, setBulkOpen] = useState(false)`
-- Add a "Bulk Import" button next to the existing "Add to Watchlist" button in the header
-- Render the modal, passing `entries` (for duplicate detection), `user`, and `refetchWatchlist` as the post-import callback
+### Changes to `src/hooks/use-watchlist.ts`
+
+- Import `enrichWatchlistEntries` from the new utility
+- After a successful single `addEntry` insert (line 183, after the toast), fire off the enrichment asynchronously for the single symbol
+- Since the Add to Watchlist modal already fetches FMP data and passes it in `data`, the FMP enrichment will be a no-op if market_cap is already set. But screen cross-referencing will now run, which it currently does not.
+- Call `fetchAll()` again after enrichment completes to refresh screen tags
 
 ### Technical Details
 
-**Column Detection Logic:**
-- Symbol: headers containing "symbol", "ticker", "stock"
-- Company Name: headers containing "name", "company", "description", "security"
-- Price: headers containing "price", "last", "close", "value"
-- Falls back to column indices 0, 1, 2 if no matches
+**Utility function signature:**
+```typescript
+export async function enrichWatchlistEntries(
+  userId: string,
+  symbols: string[],
+  fmpApiKey?: string,
+  onComplete?: () => void
+): Promise<void>
+```
 
-**Insert Strategy:**
-- Batch insert using `supabase.from("watchlist_entries").insert([...rows])` for efficiency
-- Each row includes `user_id` from auth context
-- Uses the existing `market_cap_category` as null (no FMP lookup during bulk import)
+**Screen tag logic** (moved from BulkWatchlistImportModal):
+- Query `watchlist_entries` for the given symbols to get entry IDs
+- Query `screen_runs` where `auto_tag_id` is not null
+- Build tag assignments for matching symbols
+- Upsert into `watchlist_entry_tags` with `ignoreDuplicates`
 
-**Error Handling:**
-- If any row fails (e.g., unique constraint on duplicate symbol), it is caught and counted as skipped
-- Toast shows final tally of added vs skipped
+**FMP enrichment logic** (moved from BulkWatchlistImportModal):
+- For each symbol, call `lookupSymbol`
+- If profile has market cap data, update the entry with `market_cap`, `market_cap_category`, `sector`, `industry`
+- For single-add flow, this will fill in data only if the Add modal did not already provide it (the update is idempotent)
+
+**Integration in single-add flow:**
+- After `addEntry` returns an ID successfully, call `enrichWatchlistEntries` in fire-and-forget mode
+- This adds screen tag cross-referencing that was previously missing from single adds
+- The FMP data is typically already set by the modal, so the update is harmless
+
+**Integration in bulk import:**
+- Replace ~80 lines of inline enrichment with a single function call
+- Behavior is identical: modal closes immediately, enrichment runs in background, `onImportComplete` called when done
 
