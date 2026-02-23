@@ -79,9 +79,13 @@ export default function Screens() {
     );
   }, [runs]);
 
-  // Initialize selected screens when latestByScreen changes
+  // Initialize selected screens once when latestByScreen first populates
+  const initializedRef = React.useRef(false);
   useEffect(() => {
-    setSelectedScreenIndices(new Set(latestByScreen.map((_, i) => i)));
+    if (latestByScreen.length > 0 && !initializedRef.current) {
+      setSelectedScreenIndices(new Set(latestByScreen.map((_, i) => i)));
+      initializedRef.current = true;
+    }
   }, [latestByScreen]);
 
   const toggleScreenFilter = (idx: number) => {
