@@ -16,7 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { format } from "date-fns";
 import type { Tables, Database } from "@/integrations/supabase/types";
-import { fetchQuotes } from "@/lib/fmp-api";
+import { fetchProfilesBatched } from "@/lib/fmp-api";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 type Position = Tables<"positions">;
@@ -232,6 +232,8 @@ export default function Portfolio() {
   const { settings, loading: settingsLoading, refetch: refetchSettings } = usePortfolioSettings();
   const fmpApiKey = settings.fmp_api_key;
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshProgress, setRefreshProgress] = useState<{ done: number; total: number } | null>(null);
+  const [autoRefreshed, setAutoRefreshed] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!user) return;
@@ -384,6 +386,67 @@ export default function Portfolio() {
   }, [positions]);
   const isPriceStale = latestPriceUpdate ? Date.now() - latestPriceUpdate.getTime() > 24 * 60 * 60 * 1000 : false;
 
+  // Portfolio price refresh using fetchProfilesBatched (same pattern as watchlist)
+  const handleRefreshPrices = useCallback(async () => {
+    if (!fmpApiKey || !user) return;
+    setRefreshing(true);
+    setRefreshProgress(null);
+    const syms = positions.filter((p) => p.symbol !== "CASH").map((p) => p.symbol);
+    const profiles = await fetchProfilesBatched(syms, fmpApiKey, (done, total) =>
+      setRefreshProgress({ done, total })
+    );
+
+    const now = new Date().toISOString();
+    let succeeded = 0;
+
+    for (const prof of profiles) {
+      const pos = positions.find((p) => p.symbol.toUpperCase() === prof.symbol.toUpperCase());
+      if (!pos) continue;
+      const newValue = (pos.shares ?? 0) * prof.price;
+      const { error } = await supabase
+        .from("positions")
+        .update({
+          current_price: prof.price,
+          current_value: newValue,
+          last_price_update: now,
+        })
+        .eq("id", pos.id);
+      if (!error) succeeded++;
+    }
+
+    setPositions((prev) =>
+      prev.map((p) => {
+        const prof = profiles.find((pr) => pr.symbol.toUpperCase() === p.symbol.toUpperCase());
+        if (!prof) return p;
+        return { ...p, current_price: prof.price, current_value: (p.shares ?? 0) * prof.price, last_price_update: now };
+      })
+    );
+
+    const failed = syms.length - succeeded;
+    if (failed > 0) {
+      toast({
+        title: "Price refresh",
+        description: `${succeeded} of ${syms.length} refreshed, ${failed} failed.`,
+        variant: "destructive",
+      });
+    } else if (succeeded > 0) {
+      toast({
+        title: "Prices refreshed",
+        description: `${succeeded} position${succeeded !== 1 ? "s" : ""} updated.`,
+      });
+    }
+    setRefreshing(false);
+    setRefreshProgress(null);
+  }, [fmpApiKey, user, positions, toast]);
+
+  // Auto-refresh on page load
+  useEffect(() => {
+    if (!loading && stockPositions.length > 0 && fmpApiKey && !autoRefreshed) {
+      setAutoRefreshed(true);
+      handleRefreshPrices();
+    }
+  }, [loading, stockPositions.length, fmpApiKey, autoRefreshed, handleRefreshPrices]);
+
   if (loading || settingsLoading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -391,39 +454,6 @@ export default function Portfolio() {
       </div>
     );
   }
-
-  // Portfolio price refresh
-  const handleRefreshPrices = async () => {
-    if (!fmpApiKey || !user) return;
-    setRefreshing(true);
-    const symbols = stockPositions.map((p) => p.symbol);
-    const quotes = await fetchQuotes(symbols, fmpApiKey);
-    if (quotes.length > 0) {
-      const now = new Date().toISOString();
-      for (const q of quotes) {
-        const pos = positions.find((p) => p.symbol === q.symbol);
-        if (!pos) continue;
-        const newValue = (pos.shares ?? 0) * q.price;
-        await supabase
-          .from("positions")
-          .update({
-            current_price: q.price,
-            current_value: newValue,
-            last_price_update: now,
-          })
-          .eq("id", pos.id);
-      }
-      setPositions((prev) =>
-        prev.map((p) => {
-          const q = quotes.find((qq) => qq.symbol === p.symbol);
-          if (!q) return p;
-          return { ...p, current_price: q.price, current_value: (p.shares ?? 0) * q.price, last_price_update: now };
-        })
-      );
-      toast({ title: "Prices updated", description: `Updated ${quotes.length} positions.` });
-    }
-    setRefreshing(false);
-  };
 
   return (
     <div className="p-6 space-y-6">
@@ -448,7 +478,9 @@ export default function Portfolio() {
                   disabled={!fmpApiKey || refreshing}
                 >
                   <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-                  Refresh Prices
+                  {refreshing && refreshProgress
+                    ? `Refreshing ${refreshProgress.done}/${refreshProgress.total}...`
+                    : "Refresh Prices"}
                 </Button>
               </TooltipTrigger>
               {!fmpApiKey && <TooltipContent>Set your FMP API key in Settings</TooltipContent>}
