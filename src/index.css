@@ -103,3 +103,33 @@ All colors MUST be HSL.
     @apply bg-background text-foreground;
   }
 }
+
+/* Hide native scrollbar on portfolio table */
+.portfolio-table-hide-scrollbar {
+  scrollbar-width: none;
+}
+.portfolio-table-hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Floating proxy scrollbar styling */
+.floating-scrollbar-proxy {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+}
+.floating-scrollbar-proxy::-webkit-scrollbar {
+  height: 5px;
+}
+.floating-scrollbar-proxy::-webkit-scrollbar:hover {
+  height: 8px;
+}
+.floating-scrollbar-proxy::-webkit-scrollbar-track {
+  background: transparent;
+}
+.floating-scrollbar-proxy::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.3);
+  border-radius: 9999px;
+}
+.floating-scrollbar-proxy::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+}
