@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { usePortfolioSettings, DEFAULT_SETTINGS, getPerPositionTarget, type PortfolioSettings, type CategoryConfig, type TierConfig } from "@/hooks/use-portfolio-settings";
+import { usePortfolioSettings, DEFAULT_SETTINGS, getPerPositionTarget, CATEGORY_COLOR_PALETTE, type PortfolioSettings, type CategoryConfig, type TierConfig } from "@/hooks/use-portfolio-settings";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { RotateCcw, Save, Eye, EyeOff, Key, Mail, Check, Plus, Trash2 } from "lucide-react";
@@ -52,9 +52,14 @@ export default function Settings() {
     );
   }
 
-  // Compute total of all tier allocations
+  // Compute total of all tier allocations + tier-less category target_pct
   const tierTotal = draft.categories.reduce(
-    (sum, cat) => sum + cat.tiers.reduce((s, t) => s + t.allocation_pct, 0),
+    (sum, cat) => {
+      if (cat.tiers.length > 0) {
+        return sum + cat.tiers.reduce((s, t) => s + t.allocation_pct, 0);
+      }
+      return sum + (cat.target_pct ?? 0);
+    },
     0
   );
   const tierValid = Math.abs(tierTotal - 100) < 0.01;
@@ -138,6 +143,7 @@ export default function Settings() {
       cats[catIdx] = {
         ...cat,
         tiers: [...cat.tiers, { key: newKey, name: newKey, allocation_pct: 0, max_positions: 1 }],
+        target_pct: undefined, // Clear category-level allocation when adding tiers
       };
       return { ...d, categories: cats };
     });
@@ -146,10 +152,38 @@ export default function Settings() {
   const removeTier = (catIdx: number, tierIdx: number) => {
     setDraft((d) => {
       const cats = [...d.categories];
-      if (cats[catIdx].tiers.length <= 1) return d;
       const tiers = cats[catIdx].tiers.filter((_, i) => i !== tierIdx);
       cats[catIdx] = { ...cats[catIdx], tiers };
+      // If no tiers left, initialize target_pct to 0
+      if (tiers.length === 0) {
+        cats[catIdx] = { ...cats[catIdx], target_pct: 0 };
+      }
       return { ...d, categories: cats };
+    });
+  };
+
+  const addCategory = () => {
+    setDraft((d) => {
+      if (d.categories.length >= 10) return d;
+      const usedColors = d.categories.map((c) => c.color);
+      const nextColor = CATEGORY_COLOR_PALETTE.find((c) => !usedColors.includes(c)) ?? CATEGORY_COLOR_PALETTE[d.categories.length % CATEGORY_COLOR_PALETTE.length];
+      const idx = d.categories.length + 1;
+      const key = `CAT_${idx}`;
+      const newCat: CategoryConfig = {
+        key,
+        display_name: `Category ${idx}`,
+        color: nextColor,
+        target_positions: 1,
+        tiers: [{ key: `${key.substring(0, 3)}1`, name: `${key.substring(0, 3)}1`, allocation_pct: 0, max_positions: 1 }],
+      };
+      return { ...d, categories: [...d.categories, newCat] };
+    });
+  };
+
+  const removeCategory = (catIdx: number) => {
+    setDraft((d) => {
+      if (d.categories.length <= 1) return d;
+      return { ...d, categories: d.categories.filter((_, i) => i !== catIdx) };
     });
   };
 
@@ -182,14 +216,14 @@ export default function Settings() {
     <div className="p-6 space-y-6 max-w-2xl">
       <h1 className="text-2xl font-bold">Settings</h1>
 
-      {/* Portfolio Tiers */}
+      {/* Portfolio Categories & Tiers */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="text-base">Portfolio Tiers</CardTitle>
+              <CardTitle className="text-base">Portfolio Categories & Tiers</CardTitle>
               <CardDescription>
-                Set the allocation % and max positions per tier. Per-position weight is auto-calculated.{" "}
+                Set categories, colors, allocation %, and max positions per tier. Per-position weight is auto-calculated.{" "}
                 {!tierValid && (
                   <span className="text-destructive font-medium">
                     Currently {tierTotal.toFixed(1)}%
@@ -207,9 +241,12 @@ export default function Settings() {
         </CardHeader>
         <CardContent className="space-y-6">
           {draft.categories.map((cat, catIdx) => {
-            const catTotal = cat.tiers.reduce((s, t) => s + t.allocation_pct, 0);
+            const catTotal = cat.tiers.length > 0
+              ? cat.tiers.reduce((s, t) => s + t.allocation_pct, 0)
+              : (cat.target_pct ?? 0);
             return (
               <div key={cat.key} className="space-y-3">
+                {/* Category header row */}
                 <div className="flex items-center gap-3">
                   <Label className="text-xs text-muted-foreground w-16 shrink-0">Name</Label>
                   <Input
@@ -220,106 +257,195 @@ export default function Settings() {
                   <span className="text-xs text-muted-foreground ml-auto tabular-nums">
                     Subtotal: {catTotal.toFixed(1)}%
                   </span>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                        disabled={draft.categories.length <= 1}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Remove category "{cat.display_name}"?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Any positions assigned to this category will become unassigned. This change takes effect when you save.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => removeCategory(catIdx)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                          Remove
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </div>
 
-                <div className="pl-2">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="text-xs h-8">Tier</TableHead>
-                        <TableHead className="text-xs h-8 text-right">Allocation %</TableHead>
-                        <TableHead className="text-xs h-8 text-right">Max Pos.</TableHead>
-                        <TableHead className="text-xs h-8 text-right">Per Position</TableHead>
-                        <TableHead className="text-xs h-8 w-8"></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {cat.tiers.map((tier, tierIdx) => {
-                        const perPos = getPerPositionTarget(tier);
-                        const perPosDollar = portfolioTotal != null ? (perPos / 100) * portfolioTotal : null;
-                        return (
-                          <TableRow key={tier.key}>
-                            <TableCell className="py-1">
-                              <Input
-                                value={tier.name}
-                                onChange={(e) => updateTier(catIdx, tierIdx, { name: e.target.value, key: e.target.value.toUpperCase().replace(/\s+/g, "_") })}
-                                className="h-7 text-sm w-20"
-                                placeholder="Tier"
-                              />
-                            </TableCell>
-                            <TableCell className="py-1 text-right">
-                              <div className="relative w-20 ml-auto">
+                {/* Color picker */}
+                <div className="flex items-center gap-2 pl-2">
+                  <Label className="text-xs text-muted-foreground shrink-0">Color</Label>
+                  <div className="flex items-center gap-1.5">
+                    {CATEGORY_COLOR_PALETTE.map((color) => (
+                      <button
+                        key={color}
+                        className="w-5 h-5 rounded-full border border-border/50 flex items-center justify-center transition-transform hover:scale-110"
+                        style={{ backgroundColor: color }}
+                        onClick={() => updateCategory(catIdx, { color })}
+                      >
+                        {cat.color === color && <Check className="h-3 w-3 text-white" />}
+                      </button>
+                    ))}
+                  </div>
+                  <Input
+                    value={cat.color}
+                    onChange={(e) => updateCategory(catIdx, { color: e.target.value })}
+                    className="h-7 text-xs w-24 ml-2"
+                    placeholder="#hex"
+                  />
+                </div>
+
+                {/* Target positions */}
+                <div className="flex items-center gap-2 pl-2">
+                  <Label className="text-xs text-muted-foreground shrink-0">Target Positions</Label>
+                  <Input
+                    type="number"
+                    step="1"
+                    min="1"
+                    value={cat.target_positions}
+                    onChange={(e) => updateCategory(catIdx, { target_positions: Math.max(1, Math.floor(Number(e.target.value))) })}
+                    className="h-7 text-sm w-20"
+                  />
+                </div>
+
+                {/* Tiers table or tier-less allocation */}
+                {cat.tiers.length > 0 ? (
+                  <div className="pl-2">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs h-8">Tier</TableHead>
+                          <TableHead className="text-xs h-8 text-right">Allocation %</TableHead>
+                          <TableHead className="text-xs h-8 text-right">Max Pos.</TableHead>
+                          <TableHead className="text-xs h-8 text-right">Per Position</TableHead>
+                          <TableHead className="text-xs h-8 w-8"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {cat.tiers.map((tier, tierIdx) => {
+                          const perPos = getPerPositionTarget(tier);
+                          const perPosDollar = portfolioTotal != null ? (perPos / 100) * portfolioTotal : null;
+                          return (
+                            <TableRow key={tier.key}>
+                              <TableCell className="py-1">
+                                <Input
+                                  value={tier.name}
+                                  onChange={(e) => updateTier(catIdx, tierIdx, { name: e.target.value, key: e.target.value.toUpperCase().replace(/\s+/g, "_") })}
+                                  className="h-7 text-sm w-20"
+                                  placeholder="Tier"
+                                />
+                              </TableCell>
+                              <TableCell className="py-1 text-right">
+                                <div className="relative w-20 ml-auto">
+                                  <Input
+                                    type="number"
+                                    step="0.5"
+                                    min="0"
+                                    value={tier.allocation_pct}
+                                    onChange={(e) => updateTier(catIdx, tierIdx, { allocation_pct: Number(e.target.value) })}
+                                    className="h-7 text-sm pr-6"
+                                  />
+                                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">%</span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="py-1 text-right">
                                 <Input
                                   type="number"
-                                  step="0.5"
-                                  min="0"
-                                  value={tier.allocation_pct}
-                                  onChange={(e) => updateTier(catIdx, tierIdx, { allocation_pct: Number(e.target.value) })}
-                                  className="h-7 text-sm pr-6"
+                                  step="1"
+                                  min="1"
+                                  value={tier.max_positions}
+                                  onChange={(e) => updateTier(catIdx, tierIdx, { max_positions: Math.max(1, Math.floor(Number(e.target.value))) })}
+                                  className="h-7 text-sm w-16 ml-auto"
                                 />
-                                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">%</span>
-                              </div>
-                            </TableCell>
-                            <TableCell className="py-1 text-right">
-                              <Input
-                                type="number"
-                                step="1"
-                                min="1"
-                                value={tier.max_positions}
-                                onChange={(e) => updateTier(catIdx, tierIdx, { max_positions: Math.max(1, Math.floor(Number(e.target.value))) })}
-                                className="h-7 text-sm w-16 ml-auto"
-                              />
-                            </TableCell>
-                            <TableCell className="py-1 text-right">
-                              <span className="text-xs text-muted-foreground tabular-nums">
-                                {perPos.toFixed(1)}%
-                                {perPosDollar != null && (
-                                  <span className="text-muted-foreground/60"> · {fmtDollar(perPosDollar)}</span>
-                                )}
-                              </span>
-                            </TableCell>
-                            <TableCell className="py-1">
-                              <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                                    disabled={cat.tiers.length <= 1}
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                  <AlertDialogHeader>
-                                    <AlertDialogTitle>Remove tier "{tier.name}"?</AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                      Any positions currently assigned to this tier will become unassigned. This change takes effect when you save.
-                                    </AlertDialogDescription>
-                                  </AlertDialogHeader>
-                                  <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction onClick={() => removeTier(catIdx, tierIdx)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                                      Remove
-                                    </AlertDialogAction>
-                                  </AlertDialogFooter>
-                                </AlertDialogContent>
-                              </AlertDialog>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-xs text-muted-foreground mt-1"
-                    onClick={() => addTier(catIdx)}
-                  >
-                    <Plus className="h-3 w-3 mr-1" /> Add Tier
-                  </Button>
-                </div>
+                              </TableCell>
+                              <TableCell className="py-1 text-right">
+                                <span className="text-xs text-muted-foreground tabular-nums">
+                                  {perPos.toFixed(1)}%
+                                  {perPosDollar != null && (
+                                    <span className="text-muted-foreground/60"> · {fmtDollar(perPosDollar)}</span>
+                                  )}
+                                </span>
+                              </TableCell>
+                              <TableCell className="py-1">
+                                <AlertDialog>
+                                  <AlertDialogTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </AlertDialogTrigger>
+                                  <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                      <AlertDialogTitle>Remove tier "{tier.name}"?</AlertDialogTitle>
+                                      <AlertDialogDescription>
+                                        Any positions currently assigned to this tier will become unassigned. This change takes effect when you save.
+                                      </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                      <AlertDialogAction onClick={() => removeTier(catIdx, tierIdx)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                                        Remove
+                                      </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                  </AlertDialogContent>
+                                </AlertDialog>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs text-muted-foreground mt-1"
+                      onClick={() => addTier(catIdx)}
+                    >
+                      <Plus className="h-3 w-3 mr-1" /> Add Tier
+                    </Button>
+                  </div>
+                ) : (
+                  /* Tier-less category: show allocation % input */
+                  <div className="pl-2 flex items-center gap-3">
+                    <Label className="text-xs text-muted-foreground shrink-0">Allocation %</Label>
+                    <div className="relative w-24">
+                      <Input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        value={cat.target_pct ?? 0}
+                        onChange={(e) => updateCategory(catIdx, { target_pct: Number(e.target.value) })}
+                        className="h-7 text-sm pr-6"
+                      />
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">%</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">No tiers</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs text-muted-foreground"
+                      onClick={() => addTier(catIdx)}
+                    >
+                      <Plus className="h-3 w-3 mr-1" /> Add Tier
+                    </Button>
+                  </div>
+                )}
 
                 {catIdx < draft.categories.length - 1 && (
                   <div className="border-b border-border/50" />
@@ -327,6 +453,18 @@ export default function Settings() {
               </div>
             );
           })}
+
+          {/* Add Category button */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={addCategory}
+            disabled={draft.categories.length >= 10}
+          >
+            <Plus className="h-3.5 w-3.5 mr-1.5" />
+            Add Category {draft.categories.length >= 10 && "(max 10)"}
+          </Button>
 
           {/* Grand total */}
           <div className={`border-t pt-3 flex items-center justify-between rounded-md px-2 -mx-2 ${
