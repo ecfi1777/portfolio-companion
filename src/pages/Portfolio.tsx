@@ -809,6 +809,9 @@ export default function Portfolio() {
                 >
                   <p className="text-xs font-medium" style={{ color: CATEGORY_COLORS[c.key]?.text ?? "inherit" }}>{c.name}</p>
                   <p className="text-sm font-bold">{fmt(c.value)}</p>
+                  {c.target > 0 && (
+                    <p className="text-xs text-muted-foreground">Target: {fmt((c.target / 100) * grandTotal)}</p>
+                  )}
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">{fmtPct(c.pct)}</span>
                     {c.target > 0 && (
