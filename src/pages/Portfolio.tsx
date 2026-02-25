@@ -11,6 +11,7 @@ import { UpdatePortfolioModal } from "@/components/UpdatePortfolioModal";
 import { ManagePortfolioDialog } from "@/components/ManagePortfolioSection";
 import { CategorySelector } from "@/components/CategorySelector";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Separator } from "@/components/ui/separator";
 import { usePortfolioSettings, type PortfolioSettings, type CategoryConfig, getCategoryTargets, getTierTarget, getCategoryForTier, getCategoryPerPositionTarget, buildTierOrder } from "@/hooks/use-portfolio-settings";
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -618,9 +619,9 @@ export default function Portfolio() {
     });
   }, [stockPositions, totalEquity, settings]);
 
-  // Deploy capital data
+  // Underweight positions (buy list)
   const deployCapitalList = useMemo(() => {
-    if (cashBalance <= 0 || grandTotal <= 0) return [];
+    if (grandTotal <= 0) return [];
     return stockPositions
       .filter((p) => p.tier != null || (p.category != null && settings.categories.find(c => c.key === p.category)?.tiers.length === 0))
       .map((p) => {
@@ -629,7 +630,8 @@ export default function Portfolio() {
         if (goal == null) return null;
         const goalValue = (goal / 100) * grandTotal;
         const diff = goalValue - (p.current_value ?? 0);
-        if (diff <= 0) return null;
+        const tolerance = goalValue * 0.02;
+        if (diff <= tolerance) return null;
         return {
           symbol: p.symbol,
           tier: p.tier ?? (p.category as string),
@@ -647,7 +649,35 @@ export default function Portfolio() {
       }) as {
       symbol: string; tier: string; weight: number; goal: number; toGoal: number; category: string;
     }[];
-  }, [stockPositions, cashBalance, grandTotal, settings]);
+  }, [stockPositions, grandTotal, settings]);
+
+  // Overweight positions (trim list)
+  const overweightList = useMemo(() => {
+    if (grandTotal <= 0) return [];
+    return stockPositions
+      .filter((p) => p.tier != null || (p.category != null && settings.categories.find(c => c.key === p.category)?.tiers.length === 0))
+      .map((p) => {
+        const currentVal = p.current_value ?? 0;
+        const goal = getPositionGoal({ tier: p.tier, category: p.category as Category }, settings);
+        if (goal == null) return null;
+        const goalValue = (goal / 100) * grandTotal;
+        const excess = currentVal - goalValue;
+        const tolerance = goalValue * 0.02;
+        if (excess <= tolerance) return null;
+        return {
+          symbol: p.symbol,
+          tier: p.tier ?? (p.category as string),
+          currentValue: currentVal,
+          goalValue,
+          toTrim: excess,
+          category: p.category as string,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b!.toTrim - a!.toTrim) as {
+      symbol: string; tier: string; currentValue: number; goalValue: number; toTrim: number; category: string;
+    }[];
+  }, [stockPositions, grandTotal, settings]);
 
   // Sorting
   const sortedPositions = useMemo(() => {
@@ -1145,62 +1175,114 @@ export default function Portfolio() {
         </PortfolioTableWithFloatingScrollbar>
       )}
 
-      {/* Deploy Capital Guide */}
-      {cashBalance > 0 && deployCapitalList.length > 0 && (
+      {/* Rebalance Capital */}
+      {(deployCapitalList.length > 0 || overweightList.length > 0) && (
         <Collapsible open={deployOpen} onOpenChange={setDeployOpen}>
           <Card>
             <CollapsibleTrigger asChild>
               <CardHeader className="cursor-pointer hover:bg-muted/30 transition-colors">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base flex items-center gap-2">
-                    <DollarSign className="h-4 w-4" />
-                    Deploy Capital
-                    <span className="text-sm font-normal text-muted-foreground">
-                      — {fmt(cashBalance)} available
-                    </span>
+                    <RefreshCw className="h-4 w-4" />
+                    Rebalance Capital
+                    {cashBalance > 0 && (
+                      <span className="text-sm font-normal text-muted-foreground">
+                        — {fmt(cashBalance)} cash available
+                      </span>
+                    )}
                   </CardTitle>
                   <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${deployOpen ? "rotate-180" : ""}`} />
                 </div>
               </CardHeader>
             </CollapsibleTrigger>
             <CollapsibleContent>
-              <CardContent className="pt-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Symbol</TableHead>
-                      <TableHead>Tier</TableHead>
-                      <TableHead className="text-right">Current</TableHead>
-                      <TableHead className="text-right">Goal</TableHead>
-                      <TableHead className="text-right">To Goal</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {deployCapitalList.map((item) => {
-                      const cat = item.category ? settings.categories.find(c => c.key === item.category) : getCategoryForTier(item.tier, settings);
-                      const colors = cat ? CATEGORY_COLORS[cat.key] : null;
-                      return (
-                        <TableRow key={item.symbol}>
-                          <TableCell className="font-medium">{item.symbol}</TableCell>
-                          <TableCell>
-                            <span
-                              className="text-xs px-1.5 py-0.5 rounded"
-                              style={{
-                                backgroundColor: colors?.bg ?? "transparent",
-                                color: colors?.text ?? "inherit",
-                              }}
-                            >
-                              {item.tier}
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-right text-muted-foreground">{fmtPct(item.weight)}</TableCell>
-                          <TableCell className="text-right text-muted-foreground">{fmtPct(item.goal)}</TableCell>
-                          <TableCell className="text-right font-medium">{fmt(item.toGoal)}</TableCell>
+              <CardContent className="pt-0 space-y-6">
+                {/* Underweight — Buy */}
+                {deployCapitalList.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-medium text-emerald-600 dark:text-emerald-400 mb-2">Underweight — Buy</h4>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Symbol</TableHead>
+                          <TableHead>Tier</TableHead>
+                          <TableHead className="text-right">Current</TableHead>
+                          <TableHead className="text-right">Goal</TableHead>
+                          <TableHead className="text-right">To Goal</TableHead>
                         </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {deployCapitalList.map((item) => {
+                          const cat = item.category ? settings.categories.find(c => c.key === item.category) : getCategoryForTier(item.tier, settings);
+                          const colors = cat ? CATEGORY_COLORS[cat.key] : null;
+                          return (
+                            <TableRow key={item.symbol}>
+                              <TableCell className="font-medium">{item.symbol}</TableCell>
+                              <TableCell>
+                                <span
+                                  className="text-xs px-1.5 py-0.5 rounded"
+                                  style={{
+                                    backgroundColor: colors?.bg ?? "transparent",
+                                    color: colors?.text ?? "inherit",
+                                  }}
+                                >
+                                  {item.tier}
+                                </span>
+                              </TableCell>
+                              <TableCell className="text-right text-muted-foreground">{fmtPct(item.weight)}</TableCell>
+                              <TableCell className="text-right text-muted-foreground">{fmtPct(item.goal)}</TableCell>
+                              <TableCell className="text-right font-medium text-emerald-600 dark:text-emerald-400">{fmt(item.toGoal)}</TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+
+                {/* Overweight — Trim */}
+                {overweightList.length > 0 && (
+                  <div>
+                    {deployCapitalList.length > 0 && <Separator className="mb-4" />}
+                    <h4 className="text-sm font-medium text-amber-600 dark:text-amber-400 mb-2">Overweight — Trim</h4>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Symbol</TableHead>
+                          <TableHead>Category / Tier</TableHead>
+                          <TableHead className="text-right">Current Value</TableHead>
+                          <TableHead className="text-right">Goal</TableHead>
+                          <TableHead className="text-right">To Trim</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {overweightList.map((item) => {
+                          const cat = item.category ? settings.categories.find(c => c.key === item.category) : getCategoryForTier(item.tier, settings);
+                          const colors = cat ? CATEGORY_COLORS[cat.key] : null;
+                          return (
+                            <TableRow key={item.symbol}>
+                              <TableCell className="font-medium">{item.symbol}</TableCell>
+                              <TableCell>
+                                <span
+                                  className="text-xs px-1.5 py-0.5 rounded"
+                                  style={{
+                                    backgroundColor: colors?.bg ?? "transparent",
+                                    color: colors?.text ?? "inherit",
+                                  }}
+                                >
+                                  {item.tier}
+                                </span>
+                              </TableCell>
+                              <TableCell className="text-right text-muted-foreground">{fmt(item.currentValue)}</TableCell>
+                              <TableCell className="text-right text-muted-foreground">{fmt(item.goalValue)}</TableCell>
+                              <TableCell className="text-right font-medium text-amber-600 dark:text-amber-400">{fmt(item.toTrim)}</TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
               </CardContent>
             </CollapsibleContent>
           </Card>
