@@ -95,7 +95,7 @@ export type Database = {
       positions: {
         Row: {
           account: Json | null
-          category: Database["public"]["Enums"]["position_category"] | null
+          category: string | null
           company_name: string | null
           cost_basis: number | null
           created_at: string
@@ -115,7 +115,7 @@ export type Database = {
         }
         Insert: {
           account?: Json | null
-          category?: Database["public"]["Enums"]["position_category"] | null
+          category?: string | null
           company_name?: string | null
           cost_basis?: number | null
           created_at?: string
@@ -135,7 +135,7 @@ export type Database = {
         }
         Update: {
           account?: Json | null
-          category?: Database["public"]["Enums"]["position_category"] | null
+          category?: string | null
           company_name?: string | null
           cost_basis?: number | null
           created_at?: string
@@ -459,7 +459,6 @@ export type Database = {
         | "PRICE_BELOW"
         | "PCT_CHANGE_UP"
         | "PCT_CHANGE_DOWN"
-      position_category: "CORE" | "TITAN" | "CONSENSUS"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -593,7 +592,6 @@ export const Constants = {
         "PCT_CHANGE_UP",
         "PCT_CHANGE_DOWN",
       ],
-      position_category: ["CORE", "TITAN", "CONSENSUS"],
     },
   },
 } as const

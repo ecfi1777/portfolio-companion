@@ -11,17 +11,17 @@ import { UpdatePortfolioModal } from "@/components/UpdatePortfolioModal";
 import { ManagePortfolioDialog } from "@/components/ManagePortfolioSection";
 import { CategorySelector } from "@/components/CategorySelector";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { usePortfolioSettings, type PortfolioSettings, getCategoryTargets, getTierTarget, getCategoryForTier, buildTierOrder } from "@/hooks/use-portfolio-settings";
+import { usePortfolioSettings, type PortfolioSettings, type CategoryConfig, getCategoryTargets, getTierTarget, getCategoryForTier, getCategoryPerPositionTarget, buildTierOrder } from "@/hooks/use-portfolio-settings";
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { format } from "date-fns";
-import type { Tables, Database } from "@/integrations/supabase/types";
+import type { Tables } from "@/integrations/supabase/types";
 import { fetchProfilesBatched } from "@/lib/fmp-api";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 type Position = Tables<"positions">;
 type PortfolioSummary = Tables<"portfolio_summary">;
-type Category = Database["public"]["Enums"]["position_category"] | null;
+type Category = string | null;
 type Tier = string | null;
 
 interface AccountBreakdown {
@@ -50,21 +50,29 @@ function getAccountBreakdowns(account: unknown): AccountBreakdown[] {
 type SortKey = "symbol" | "current_value" | "gainLossDollar" | "gainLossPct" | "weight" | "category";
 type SortDir = "asc" | "desc";
 
-const COLOR_PALETTE = [
-  { bg: "bg-blue-100 dark:bg-blue-900/30", text: "text-blue-700 dark:text-blue-300", bar: "bg-blue-500" },
-  { bg: "bg-emerald-100 dark:bg-emerald-900/30", text: "text-emerald-700 dark:text-emerald-300", bar: "bg-emerald-500" },
-  { bg: "bg-violet-100 dark:bg-violet-900/30", text: "text-violet-700 dark:text-violet-300", bar: "bg-violet-500" },
-  { bg: "bg-amber-100 dark:bg-amber-900/30", text: "text-amber-700 dark:text-amber-300", bar: "bg-amber-500" },
-  { bg: "bg-rose-100 dark:bg-rose-900/30", text: "text-rose-700 dark:text-rose-300", bar: "bg-rose-500" },
-];
-const UNASSIGNED_COLORS = { bg: "bg-muted", text: "text-muted-foreground", bar: "bg-muted-foreground/30" };
+/** Convert hex color to rgba with opacity */
+function hexToRgba(hex: string, opacity: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+}
 
-function getCategoryColors(settings: PortfolioSettings): Record<string, { bg: string; text: string; bar: string }> {
-  const map: Record<string, { bg: string; text: string; bar: string }> = {};
-  settings.categories.forEach((cat, i) => {
-    map[cat.key] = COLOR_PALETTE[i % COLOR_PALETTE.length];
-  });
-  map["Unassigned"] = UNASSIGNED_COLORS;
+function getHexCategoryColors(settings: PortfolioSettings): Record<string, { bg: string; bar: string; text: string }> {
+  const map: Record<string, { bg: string; bar: string; text: string }> = {};
+  for (const cat of settings.categories) {
+    const hex = cat.color || "#64748b";
+    map[cat.key] = {
+      bg: hexToRgba(hex, 0.15),
+      bar: hex,
+      text: hex,
+    };
+  }
+  map["Unassigned"] = {
+    bg: "rgba(100, 116, 139, 0.1)",
+    bar: "rgba(100, 116, 139, 0.3)",
+    text: "rgba(100, 116, 139, 0.7)",
+  };
   return map;
 }
 
@@ -72,20 +80,29 @@ function getTierGoal(tier: Tier, settings: PortfolioSettings): number | null {
   return getTierTarget(tier, settings);
 }
 
+/** Get the per-position goal for a position (tier-based or category-based) */
+function getPositionGoal(p: { tier: Tier; category: Category }, settings: PortfolioSettings): number | null {
+  if (p.tier) return getTierGoal(p.tier, settings);
+  if (p.category) {
+    const cat = settings.categories.find((c) => c.key === p.category);
+    if (cat && cat.tiers.length === 0) return getCategoryPerPositionTarget(cat);
+  }
+  return null;
+}
+
 function getCapitalToGoal(
   weight: number,
-  tier: Tier,
+  position: { tier: Tier; category: Category },
   currentValue: number,
   grandTotal: number,
   settings: PortfolioSettings
 ): { label: string; type: "below" | "at" | "above" } | null {
-  if (!tier) return null;
-  const goal = getTierGoal(tier, settings);
+  const goal = getPositionGoal(position, settings);
   if (goal == null) return null;
 
   const goalValue = (goal / 100) * grandTotal;
   const diff = goalValue - currentValue;
-  const tolerance = goalValue * 0.02; // ±2% band
+  const tolerance = goalValue * 0.02;
 
   if (Math.abs(diff) <= tolerance) return { label: "At goal", type: "at" };
   if (diff > 0) return { label: `↑ ${fmt(diff)}`, type: "below" };
@@ -98,12 +115,14 @@ function PositionDetailPanel({
   onDelete,
   onCategoryUpdate,
   tierCounts,
+  categoryCounts,
 }: {
   position: Position;
   onUpdate: (updates: Partial<Position>) => void;
   onDelete: () => void;
   onCategoryUpdate: (cat: Category, tier: Tier) => void;
   tierCounts: Record<string, number>;
+  categoryCounts: Record<string, number>;
 }) {
   const { toast } = useToast();
   const [notes, setNotes] = useState(position.notes ?? "");
@@ -138,7 +157,6 @@ function PositionDetailPanel({
 
   return (
     <div className="px-6 py-4 space-y-4">
-      {/* Metadata */}
       <div className="flex items-center gap-4 text-sm text-muted-foreground">
         <Calendar className="h-3.5 w-3.5" />
         <span>
@@ -148,7 +166,6 @@ function PositionDetailPanel({
         </span>
       </div>
 
-      {/* Editable fields */}
       <div className="grid gap-3 md:grid-cols-2">
         <div className="space-y-1">
           <label className="text-xs font-medium text-muted-foreground">Notes</label>
@@ -176,16 +193,16 @@ function PositionDetailPanel({
         </div>
       </div>
 
-      {/* Quick Actions */}
       <div className="flex items-center gap-3 pt-1">
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">Reclassify:</span>
           <CategorySelector
             positionId={position.id}
-            category={position.category}
+            category={position.category as Category}
             tier={position.tier}
             onUpdate={onCategoryUpdate}
             tierCounts={tierCounts}
+            categoryCounts={categoryCounts}
           />
         </div>
         <div className="ml-auto">
@@ -261,12 +278,20 @@ export default function Portfolio() {
   const totalGainLossPct = totalCostBasis > 0 ? (totalGainLoss / totalCostBasis) * 100 : 0;
   const assignedCount = stockPositions.filter((p) => p.category != null).length;
 
-  const CATEGORY_COLORS = useMemo(() => getCategoryColors(settings), [settings]);
+  const CATEGORY_COLORS = useMemo(() => getHexCategoryColors(settings), [settings]);
   const tierOrder = useMemo(() => buildTierOrder(settings), [settings]);
   const tierCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const p of stockPositions) {
       if (p.tier) counts[p.tier] = (counts[p.tier] ?? 0) + 1;
+    }
+    return counts;
+  }, [stockPositions]);
+
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const p of stockPositions) {
+      if (p.category) counts[p.category as string] = (counts[p.category as string] ?? 0) + 1;
     }
     return counts;
   }, [stockPositions]);
@@ -277,7 +302,7 @@ export default function Portfolio() {
     for (const cat of settings.categories) groups[cat.key] = 0;
     groups["Unassigned"] = 0;
     for (const p of stockPositions) {
-      const key = p.category ?? "Unassigned";
+      const key = (p.category as string) ?? "Unassigned";
       groups[key] = (groups[key] ?? 0) + (p.current_value ?? 0);
     }
     const catTargets = getCategoryTargets(settings);
@@ -297,25 +322,30 @@ export default function Portfolio() {
   const deployCapitalList = useMemo(() => {
     if (cashBalance <= 0 || grandTotal <= 0) return [];
     return stockPositions
-      .filter((p) => p.tier != null)
+      .filter((p) => p.tier != null || (p.category != null && settings.categories.find(c => c.key === p.category)?.tiers.length === 0))
       .map((p) => {
         const weight = ((p.current_value ?? 0) / grandTotal) * 100;
-        const goal = getTierGoal(p.tier, settings);
+        const goal = getPositionGoal({ tier: p.tier, category: p.category as Category }, settings);
         if (goal == null) return null;
         const goalValue = (goal / 100) * grandTotal;
         const diff = goalValue - (p.current_value ?? 0);
         if (diff <= 0) return null;
         return {
           symbol: p.symbol,
-          tier: p.tier!,
+          tier: p.tier ?? (p.category as string),
           weight,
           goal,
           toGoal: diff,
+          category: p.category as string,
         };
       })
       .filter(Boolean)
-      .sort((a, b) => (tierOrder[a!.tier] ?? 99) - (tierOrder[b!.tier] ?? 99)) as {
-      symbol: string; tier: string; weight: number; goal: number; toGoal: number;
+      .sort((a, b) => {
+        const aOrder = a!.tier ? (tierOrder[a!.tier] ?? 99) : 99;
+        const bOrder = b!.tier ? (tierOrder[b!.tier] ?? 99) : 99;
+        return aOrder - bOrder;
+      }) as {
+      symbol: string; tier: string; weight: number; goal: number; toGoal: number; category: string;
     }[];
   }, [stockPositions, cashBalance, grandTotal, settings]);
 
@@ -341,7 +371,7 @@ export default function Portfolio() {
           aVal = grandTotal > 0 ? (a.current_value ?? 0) / grandTotal : 0;
           bVal = grandTotal > 0 ? (b.current_value ?? 0) / grandTotal : 0; break;
         case "category":
-          aVal = a.category ?? "zzz"; bVal = b.category ?? "zzz";
+          aVal = (a.category as string) ?? "zzz"; bVal = (b.category as string) ?? "zzz";
           return sortDir === "asc" ? (aVal as string).localeCompare(bVal as string) : (bVal as string).localeCompare(aVal as string);
       }
       return sortDir === "asc" ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number);
@@ -360,7 +390,7 @@ export default function Portfolio() {
 
   const handleCategoryUpdate = (id: string, category: Category, tier: Tier) => {
     setPositions((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, category, tier } : p))
+      prev.map((p) => (p.id === id ? { ...p, category: category as any, tier } : p))
     );
   };
 
@@ -386,7 +416,7 @@ export default function Portfolio() {
   }, [positions]);
   const isPriceStale = latestPriceUpdate ? Date.now() - latestPriceUpdate.getTime() > 24 * 60 * 60 * 1000 : false;
 
-  // Portfolio price refresh using fetchProfilesBatched (same pattern as watchlist)
+  // Portfolio price refresh
   const handleRefreshPrices = useCallback(async () => {
     if (!fmpApiKey || !user) return;
     setRefreshing(true);
@@ -554,16 +584,20 @@ export default function Portfolio() {
               {categoryBreakdown.filter((c) => c.value > 0).map((c) => (
                 <div
                   key={c.key}
-                  className={`${CATEGORY_COLORS[c.key]?.bar ?? "bg-muted"} transition-all`}
-                  style={{ width: `${c.pct}%` }}
+                  className="transition-all"
+                  style={{ width: `${c.pct}%`, backgroundColor: CATEGORY_COLORS[c.key]?.bar ?? "rgba(100,116,139,0.3)" }}
                 />
               ))}
             </div>
             {/* Legend with targets */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {categoryBreakdown.map((c) => (
-                <div key={c.key} className={`rounded-md px-3 py-2 ${CATEGORY_COLORS[c.key]?.bg ?? "bg-muted"}`}>
-                  <p className={`text-xs font-medium ${CATEGORY_COLORS[c.key]?.text ?? "text-muted-foreground"}`}>{c.name}</p>
+                <div
+                  key={c.key}
+                  className="rounded-md px-3 py-2"
+                  style={{ backgroundColor: CATEGORY_COLORS[c.key]?.bg ?? "rgba(100,116,139,0.1)" }}
+                >
+                  <p className="text-xs font-medium" style={{ color: CATEGORY_COLORS[c.key]?.text ?? "inherit" }}>{c.name}</p>
                   <p className="text-sm font-bold">{fmt(c.value)}</p>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">{fmtPct(c.pct)}</span>
@@ -577,8 +611,11 @@ export default function Portfolio() {
                   {c.target > 0 && (
                     <div className="mt-1.5 h-1 w-full rounded-full bg-muted-foreground/10 overflow-hidden">
                       <div
-                        className={`h-full rounded-full ${CATEGORY_COLORS[c.key]?.bar ?? "bg-muted"} opacity-60 transition-all`}
-                        style={{ width: `${Math.min((c.pct / c.target) * 100, 100)}%` }}
+                        className="h-full rounded-full opacity-60 transition-all"
+                        style={{
+                          width: `${Math.min((c.pct / c.target) * 100, 100)}%`,
+                          backgroundColor: CATEGORY_COLORS[c.key]?.bar ?? "rgba(100,116,139,0.3)",
+                        }}
                       />
                     </div>
                   )}
@@ -626,8 +663,9 @@ export default function Portfolio() {
                   const glPct = isCash ? 0 : (p.cost_basis ?? 0) > 0 ? (gl / (p.cost_basis ?? 1)) * 100 : 0;
                   const weight = grandTotal > 0 ? ((p.current_value ?? 0) / grandTotal) * 100 : 0;
                   const glColor = isCash ? "text-muted-foreground" : gl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400";
-                  const tierGoal = getTierGoal(p.tier, settings);
-                  const capitalToGoal = isCash ? null : getCapitalToGoal(weight, p.tier, p.current_value ?? 0, grandTotal, settings);
+                  const posGoal = getPositionGoal({ tier: p.tier, category: p.category as Category }, settings);
+                  const capitalToGoal = isCash ? null : getCapitalToGoal(weight, { tier: p.tier, category: p.category as Category }, p.current_value ?? 0, grandTotal, settings);
+                  const catColors = CATEGORY_COLORS[(p.category as string) ?? ""];
 
                   return (
                     <Fragment key={p.id}>
@@ -662,13 +700,14 @@ export default function Portfolio() {
                         {/* Weight + progress bar */}
                         <TableCell className="text-right">
                           <span className="text-muted-foreground">{fmtPct(weight)}</span>
-                          {tierGoal != null && !isCash && (
+                          {posGoal != null && !isCash && (
                             <div className="mt-1 h-1 w-full min-w-[48px] rounded-full bg-muted-foreground/10 overflow-hidden">
                               <div
-                                className={`h-full rounded-full transition-all ${
-                                  CATEGORY_COLORS[p.category ?? ""]?.bar ?? "bg-primary"
-                                } opacity-70`}
-                                style={{ width: `${Math.min((weight / tierGoal) * 100, 100)}%` }}
+                                className="h-full rounded-full transition-all opacity-70"
+                                style={{
+                                  width: `${Math.min((weight / posGoal) * 100, 100)}%`,
+                                  backgroundColor: catColors?.bar ?? "hsl(var(--primary))",
+                                }}
                               />
                             </div>
                           )}
@@ -697,11 +736,12 @@ export default function Portfolio() {
                           ) : (
                             <CategorySelector
                               positionId={p.id}
-                              category={p.category}
+                              category={p.category as Category}
                               tier={p.tier}
                               onUpdate={(cat, tier) => handleCategoryUpdate(p.id, cat, tier)}
                               onTierSettingsChanged={refetchSettings}
                               tierCounts={tierCounts}
+                              categoryCounts={categoryCounts}
                               portfolioTotal={grandTotal}
                             />
                           )}
@@ -735,6 +775,7 @@ export default function Portfolio() {
                               }}
                               onCategoryUpdate={(cat, tier) => handleCategoryUpdate(p.id, cat, tier)}
                               tierCounts={tierCounts}
+                              categoryCounts={categoryCounts}
                             />
                           </TableCell>
                         </TableRow>
@@ -779,25 +820,29 @@ export default function Portfolio() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {deployCapitalList.map((item) => (
-                      <TableRow key={item.symbol}>
-                        <TableCell className="font-medium">{item.symbol}</TableCell>
-                        <TableCell>
-                          {(() => {
-                            const cat = getCategoryForTier(item.tier, settings);
-                            const colors = cat ? CATEGORY_COLORS[cat.key] : null;
-                            return (
-                              <span className={`text-xs px-1.5 py-0.5 rounded ${colors?.bg ?? ""} ${colors?.text ?? ""}`}>
-                                {item.tier}
-                              </span>
-                            );
-                          })()}
-                        </TableCell>
-                        <TableCell className="text-right text-muted-foreground">{fmtPct(item.weight)}</TableCell>
-                        <TableCell className="text-right text-muted-foreground">{fmtPct(item.goal)}</TableCell>
-                        <TableCell className="text-right font-medium">{fmt(item.toGoal)}</TableCell>
-                      </TableRow>
-                    ))}
+                    {deployCapitalList.map((item) => {
+                      const cat = item.category ? settings.categories.find(c => c.key === item.category) : getCategoryForTier(item.tier, settings);
+                      const colors = cat ? CATEGORY_COLORS[cat.key] : null;
+                      return (
+                        <TableRow key={item.symbol}>
+                          <TableCell className="font-medium">{item.symbol}</TableCell>
+                          <TableCell>
+                            <span
+                              className="text-xs px-1.5 py-0.5 rounded"
+                              style={{
+                                backgroundColor: colors?.bg ?? "transparent",
+                                color: colors?.text ?? "inherit",
+                              }}
+                            >
+                              {item.tier}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right text-muted-foreground">{fmtPct(item.weight)}</TableCell>
+                          <TableCell className="text-right text-muted-foreground">{fmtPct(item.goal)}</TableCell>
+                          <TableCell className="text-right font-medium">{fmt(item.toGoal)}</TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </CardContent>
