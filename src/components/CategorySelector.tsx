@@ -178,19 +178,37 @@ export function CategorySelector({ positionId, category, tier, onUpdate, onTierS
         </SelectValue>
       </SelectTrigger>
       <SelectContent>
-        {settings.categories.map((cat) => (
-          <SelectGroup key={cat.key}>
-            <SelectLabel className="text-xs text-muted-foreground">
-              <span className="inline-flex items-center gap-1.5">
-                <span
-                  className="inline-block w-2 h-2 rounded-full"
-                  style={{ backgroundColor: cat.color }}
-                />
-                {cat.display_name}
-              </span>
-            </SelectLabel>
-            {cat.tiers.length > 0 ? (
-              cat.tiers.map((t) => {
+        {settings.categories.map((cat) => {
+          if (cat.tiers.length === 0) {
+            const catCount = categoryCounts[cat.key] ?? 0;
+            const isFull = catCount >= cat.target_positions && category !== cat.key;
+            return (
+              <SelectItem key={`cat:${cat.key}`} value={`cat:${cat.key}`} disabled={isFull}>
+                <span className={`inline-flex items-center gap-1.5 ${isFull ? "text-muted-foreground" : ""}`}>
+                  <span
+                    className="inline-block w-2 h-2 rounded-full shrink-0"
+                    style={{ backgroundColor: cat.color }}
+                  />
+                  {cat.display_name}
+                  <span className="ml-0.5 text-[10px] text-muted-foreground">
+                    {catCount}/{cat.target_positions}
+                  </span>
+                </span>
+              </SelectItem>
+            );
+          }
+          return (
+            <SelectGroup key={cat.key}>
+              <SelectLabel className="text-xs text-muted-foreground">
+                <span className="inline-flex items-center gap-1.5">
+                  <span
+                    className="inline-block w-2 h-2 rounded-full"
+                    style={{ backgroundColor: cat.color }}
+                  />
+                  {cat.display_name}
+                </span>
+              </SelectLabel>
+              {cat.tiers.map((t) => {
                 const count = tierCounts[t.key] ?? 0;
                 const isFull = count >= t.max_positions && t.key !== tier;
                 return (
@@ -203,25 +221,10 @@ export function CategorySelector({ positionId, category, tier, onUpdate, onTierS
                     </span>
                   </SelectItem>
                 );
-              })
-            ) : (
-              (() => {
-                const catCount = categoryCounts[cat.key] ?? 0;
-                const isFull = catCount >= cat.target_positions && category !== cat.key;
-                return (
-                  <SelectItem key={`cat:${cat.key}`} value={`cat:${cat.key}`} disabled={isFull}>
-                    <span className={isFull ? "text-muted-foreground" : ""}>
-                      {cat.display_name}
-                      <span className="ml-1.5 text-[10px] text-muted-foreground">
-                        {catCount}/{cat.target_positions}
-                      </span>
-                    </span>
-                  </SelectItem>
-                );
-              })()
-            )}
-          </SelectGroup>
-        ))}
+              })}
+            </SelectGroup>
+          );
+        })}
         <SelectItem value="__clear__" className="text-muted-foreground">Clear</SelectItem>
       </SelectContent>
     </Select>
