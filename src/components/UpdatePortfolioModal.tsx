@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Upload, FileText, Check, AlertTriangle, Plus, Info, CirclePlus, RefreshCw, Minus } from "lucide-react";
+import { Upload, FileText, Check, AlertTriangle, Plus, Info, CirclePlus, RefreshCw, Minus, Trash2, Eye, TrendingUp, TrendingDown } from "lucide-react";
 import type { Tables, Json } from "@/integrations/supabase/types";
 
 const fmt = (n: number) =>
@@ -17,6 +17,9 @@ const fmt = (n: number) =>
 
 const fmtShares = (n: number) =>
   n.toLocaleString("en-US", { maximumFractionDigits: 4 });
+
+const fmtPct = (n: number) =>
+  (n >= 0 ? "+" : "") + n.toFixed(2) + "%";
 
 interface FieldChange {
   field: string;
@@ -35,12 +38,21 @@ interface UpdatedPosition {
   changes: FieldChange[];
 }
 
+interface RemovedPosition {
+  id: string;
+  symbol: string;
+  currentValue: number;
+}
+
 interface ChangeSummary {
   newPositions: NewPosition[];
   updatedPositions: UpdatedPosition[];
   unchangedCount: number;
+  removedPositions: RemovedPosition[];
   oldCash: number | null;
   newCash: number;
+  oldTotal: number;
+  newTotal: number;
 }
 
 function buildChangeSummary(
@@ -50,6 +62,7 @@ function buildChangeSummary(
   newCash: number
 ): ChangeSummary {
   const existingMap = new Map(existingPositions.map((p) => [p.symbol, p]));
+  const parsedSymbols = new Set(parsedPositions.map((p) => p.symbol));
 
   const newPositions: NewPosition[] = [];
   const updatedPositions: UpdatedPosition[] = [];
@@ -87,7 +100,19 @@ function buildChangeSummary(
     }
   }
 
-  return { newPositions, updatedPositions, unchangedCount, oldCash, newCash };
+  // Positions in DB but not in CSV (exclude CASH)
+  const removedPositions: RemovedPosition[] = existingPositions
+    .filter((p) => p.symbol !== "CASH" && !parsedSymbols.has(p.symbol))
+    .map((p) => ({ id: p.id, symbol: p.symbol, currentValue: p.current_value ?? 0 }));
+
+  // Totals
+  const oldTotal = existingPositions
+    .filter((p) => p.symbol !== "CASH")
+    .reduce((s, p) => s + (p.current_value ?? 0), 0) + (oldCash ?? 0);
+
+  const newTotal = parsedPositions.reduce((s, p) => s + p.currentValue, 0) + newCash;
+
+  return { newPositions, updatedPositions, unchangedCount, removedPositions, oldCash, newCash, oldTotal, newTotal };
 }
 
 interface UpdatePortfolioModalProps {
@@ -97,7 +122,7 @@ interface UpdatePortfolioModalProps {
   fileNames?: string[];
 }
 
-type ModalPhase = "upload" | "summary";
+type ModalPhase = "upload" | "preview";
 
 export function UpdatePortfolioModal({ open, onOpenChange, onSuccess, fileNames: _externalFileNames }: UpdatePortfolioModalProps) {
   const { user } = useAuth();
@@ -105,7 +130,7 @@ export function UpdatePortfolioModal({ open, onOpenChange, onSuccess, fileNames:
   const [csvTexts, setCsvTexts] = useState<string[]>([]);
   const [csvFileNames, setCsvFileNames] = useState<string[]>([]);
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
-  const [importing, setImporting] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [phase, setPhase] = useState<ModalPhase>("upload");
   const [changeSummary, setChangeSummary] = useState<ChangeSummary | null>(null);
@@ -148,12 +173,11 @@ export function UpdatePortfolioModal({ open, onOpenChange, onSuccess, fileNames:
     e.target.value = "";
   };
 
-  const confirmImport = async () => {
+  /** Step 2: Build preview (no DB writes) */
+  const buildPreview = async () => {
     if (!user || !parseResult) return;
-    setImporting(true);
-
+    setLoading(true);
     try {
-      // Fetch existing data for diff
       const [posRes, sumRes] = await Promise.all([
         supabase.from("positions").select("*"),
         supabase.from("portfolio_summary").select("*").maybeSingle(),
@@ -161,8 +185,33 @@ export function UpdatePortfolioModal({ open, onOpenChange, onSuccess, fileNames:
 
       const existingPositions = posRes.data ?? [];
       const oldCash = sumRes.data?.cash_balance ?? null;
+      const summary = buildChangeSummary(existingPositions, parseResult.positions, oldCash, parseResult.cashBalance);
+      setChangeSummary(summary);
+      setPhase("preview");
+    } catch (err: any) {
+      toast({ title: "Failed to load preview", description: err.message, variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
 
-      // Perform upserts
+  /** Step 3: Confirm import (all DB writes happen here) */
+  const confirmImport = async () => {
+    if (!user || !parseResult || !changeSummary) return;
+    setLoading(true);
+
+    try {
+      // 1. Delete removed positions
+      if (changeSummary.removedPositions.length > 0) {
+        const ids = changeSummary.removedPositions.map((p) => p.id);
+        const { error: delError } = await supabase
+          .from("positions")
+          .delete()
+          .in("id", ids);
+        if (delError) throw delError;
+      }
+
+      // 2. Upsert CSV positions
       for (const p of parseResult.positions) {
         const { error } = await supabase
           .from("positions")
@@ -182,7 +231,7 @@ export function UpdatePortfolioModal({ open, onOpenChange, onSuccess, fileNames:
         if (error) throw error;
       }
 
-      // Upsert CASH position row
+      // 3. Upsert CASH position
       if (parseResult.cashBalance > 0) {
         const { error: cashPosError } = await supabase
           .from("positions")
@@ -202,6 +251,7 @@ export function UpdatePortfolioModal({ open, onOpenChange, onSuccess, fileNames:
         if (cashPosError) throw cashPosError;
       }
 
+      // 4. Upsert portfolio summary
       const { error: sumError } = await supabase
         .from("portfolio_summary")
         .upsert(
@@ -214,10 +264,7 @@ export function UpdatePortfolioModal({ open, onOpenChange, onSuccess, fileNames:
         );
       if (sumError) throw sumError;
 
-      // Build summary and switch phase
-      const summary = buildChangeSummary(existingPositions, parseResult.positions, oldCash, parseResult.cashBalance);
-
-      // Log import history
+      // 5. Log import history
       const totalValue = parseResult.positions.reduce((s, p) => s + p.currentValue, 0) + parseResult.cashBalance;
       await supabase.from("import_history").insert({
         user_id: user.id,
@@ -226,13 +273,21 @@ export function UpdatePortfolioModal({ open, onOpenChange, onSuccess, fileNames:
         total_value: totalValue,
       });
 
-      setChangeSummary(summary);
-      setPhase("summary");
+      // 6. Success
+      const added = changeSummary.newPositions.length;
+      const updated = changeSummary.updatedPositions.length;
+      const removed = changeSummary.removedPositions.length;
+      toast({
+        title: "Portfolio updated",
+        description: `${added} added, ${updated} updated, ${removed} removed`,
+      });
       onSuccess();
+      resetState();
+      onOpenChange(false);
     } catch (err: any) {
-      toast({ title: "Update failed", description: err.message, variant: "destructive" });
+      toast({ title: "Import failed", description: err.message, variant: "destructive" });
     } finally {
-      setImporting(false);
+      setLoading(false);
     }
   };
 
@@ -249,22 +304,22 @@ export function UpdatePortfolioModal({ open, onOpenChange, onSuccess, fileNames:
     onOpenChange(nextOpen);
   };
 
-  const handleDone = () => {
-    resetState();
-    onOpenChange(false);
-  };
-
   const hasFiles = csvTexts.length > 0;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{phase === "summary" ? "Update Complete" : "Update Portfolio"}</DialogTitle>
+          <DialogTitle>{phase === "preview" ? "Review Changes" : "Update Portfolio"}</DialogTitle>
         </DialogHeader>
 
-        {phase === "summary" && changeSummary ? (
-          <SummaryView summary={changeSummary} onDone={handleDone} />
+        {phase === "preview" && changeSummary ? (
+          <PreviewView
+            summary={changeSummary}
+            onCancel={() => handleOpenChange(false)}
+            onConfirm={confirmImport}
+            loading={loading}
+          />
         ) : (
           <div className="space-y-4">
             {/* Upload area */}
@@ -305,7 +360,7 @@ export function UpdatePortfolioModal({ open, onOpenChange, onSuccess, fileNames:
               )}
             </div>
 
-            {/* Preview */}
+            {/* Parsed data preview */}
             {parseResult && (
               <>
                 {parseResult.errors.length > 0 && (
@@ -367,11 +422,10 @@ export function UpdatePortfolioModal({ open, onOpenChange, onSuccess, fileNames:
                   </Table>
                 </div>
 
-                {/* Warning banner */}
                 <Alert className="border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/30">
                   <Info className="h-4 w-4 text-amber-600 dark:text-amber-400" />
                   <AlertDescription className="text-amber-800 dark:text-amber-200 text-sm">
-                    This will update all position data (shares, prices, values, cost basis) with the data from your uploaded files. Existing category assignments and notes will be preserved. No positions will be deleted.
+                    Positions not in the uploaded files will be flagged for removal. Category assignments, notes, and tags are preserved for updated positions.
                   </AlertDescription>
                 </Alert>
 
@@ -379,9 +433,9 @@ export function UpdatePortfolioModal({ open, onOpenChange, onSuccess, fileNames:
                   <Button variant="outline" onClick={() => handleOpenChange(false)}>
                     Cancel
                   </Button>
-                  <Button onClick={confirmImport} disabled={importing}>
-                    <Check className="mr-2 h-4 w-4" />
-                    {importing ? "Updating..." : "Update Portfolio"}
+                  <Button onClick={buildPreview} disabled={loading}>
+                    <Eye className="mr-2 h-4 w-4" />
+                    {loading ? "Loading..." : "Preview Changes"}
                   </Button>
                 </div>
               </>
@@ -393,24 +447,53 @@ export function UpdatePortfolioModal({ open, onOpenChange, onSuccess, fileNames:
   );
 }
 
-/* ---------- Summary View ---------- */
+/* ---------- Preview View ---------- */
 
-function SummaryView({ summary, onDone }: { summary: ChangeSummary; onDone: () => void }) {
+function PreviewView({
+  summary,
+  onCancel,
+  onConfirm,
+  loading,
+}: {
+  summary: ChangeSummary;
+  onCancel: () => void;
+  onConfirm: () => void;
+  loading: boolean;
+}) {
   const cashChanged = summary.oldCash !== null && Math.abs((summary.oldCash ?? 0) - summary.newCash) > 0.01;
   const cashDiff = summary.newCash - (summary.oldCash ?? 0);
+  const totalDiff = summary.newTotal - summary.oldTotal;
+  const totalPct = summary.oldTotal > 0 ? (totalDiff / summary.oldTotal) * 100 : 0;
 
   return (
     <div className="space-y-5">
-      {/* Cash change */}
-      {cashChanged && (
-        <div className="rounded-md border p-3 flex items-center gap-3">
-          <span className="text-sm font-medium text-muted-foreground">Cash:</span>
-          <span className="text-sm">
-            {fmt(summary.oldCash ?? 0)} → {fmt(summary.newCash)}
-          </span>
-          <Badge variant={cashDiff >= 0 ? "default" : "destructive"} className={cashDiff >= 0 ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300" : ""}>
-            {cashDiff >= 0 ? "+" : ""}{fmt(cashDiff)}
-          </Badge>
+      {/* Removed positions */}
+      {summary.removedPositions.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <Trash2 className="h-4 w-4 text-destructive" />
+            <h3 className="text-sm font-semibold text-destructive">
+              Removing {summary.removedPositions.length} position{summary.removedPositions.length !== 1 ? "s" : ""}
+            </h3>
+          </div>
+          <div className="rounded-md border border-destructive/30 overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-destructive/5">
+                  <TableHead className="text-xs">Symbol</TableHead>
+                  <TableHead className="text-xs text-right">Current Value</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {summary.removedPositions.map((p) => (
+                  <TableRow key={p.id}>
+                    <TableCell className="font-medium">{p.symbol}</TableCell>
+                    <TableCell className="text-right">{fmt(p.currentValue)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </div>
       )}
 
@@ -495,10 +578,38 @@ function SummaryView({ summary, onDone }: { summary: ChangeSummary; onDone: () =
         </div>
       )}
 
-      <div className="flex justify-end">
-        <Button onClick={onDone}>
+      {/* Cash balance */}
+      {cashChanged && (
+        <div className="rounded-md border p-3 flex items-center gap-3">
+          <span className="text-sm font-medium text-muted-foreground">Cash:</span>
+          <span className="text-sm">
+            {fmt(summary.oldCash ?? 0)} → {fmt(summary.newCash)}
+          </span>
+          <Badge variant={cashDiff >= 0 ? "default" : "destructive"} className={cashDiff >= 0 ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300" : ""}>
+            {cashDiff >= 0 ? "+" : ""}{fmt(cashDiff)}
+          </Badge>
+        </div>
+      )}
+
+      {/* Total portfolio value */}
+      <div className="rounded-md border p-3 flex items-center gap-3">
+        <span className="text-sm font-medium text-muted-foreground">Total Value:</span>
+        <span className="text-sm">
+          {fmt(summary.oldTotal)} → {fmt(summary.newTotal)}
+        </span>
+        <Badge variant={totalDiff >= 0 ? "default" : "destructive"} className={totalDiff >= 0 ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300" : ""}>
+          {totalDiff >= 0 ? "+" : ""}{fmt(totalDiff)} ({fmtPct(totalPct)})
+        </Badge>
+      </div>
+
+      {/* Action buttons */}
+      <div className="flex gap-3 justify-end">
+        <Button variant="outline" onClick={onCancel} disabled={loading}>
+          Cancel
+        </Button>
+        <Button onClick={onConfirm} disabled={loading}>
           <Check className="mr-2 h-4 w-4" />
-          Done
+          {loading ? "Importing..." : "Confirm Import"}
         </Button>
       </div>
     </div>
