@@ -658,12 +658,12 @@ export default function Watchlist() {
                             </Badge>
                           ) : "—"}
                         </TableCell>
-                        <TableCell>
-                          <div className="flex flex-wrap gap-1">
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <div className="flex flex-wrap items-center gap-1">
                             {entryTags.map((tag) => (
                               <span
                                 key={tag.id}
-                                className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium border"
+                                className="inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-medium border group/tag"
                                 style={{
                                   backgroundColor: tag.color ? `${tag.color}20` : undefined,
                                   color: tag.color ?? undefined,
@@ -671,8 +671,36 @@ export default function Watchlist() {
                                 }}
                               >
                                 {tag.short_code}
+                                <button
+                                  onClick={() => removeEntryTag(entry.id, tag.id)}
+                                  className="opacity-0 group-hover/tag:opacity-100 hover:opacity-70 transition-opacity -mr-0.5"
+                                >
+                                  <X className="h-2.5 w-2.5" />
+                                </button>
                               </span>
                             ))}
+                            {availableTags.length > 0 && (
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <button className="inline-flex items-center justify-center rounded-full border border-dashed border-border h-5 w-5 text-muted-foreground hover:border-foreground hover:text-foreground transition-colors">
+                                    <Plus className="h-3 w-3" />
+                                  </button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-48 p-1" align="start">
+                                  {availableTags.map((t) => (
+                                    <button
+                                      key={t.id}
+                                      className="flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent text-left"
+                                      onClick={() => addEntryTag(entry.id, t.id)}
+                                    >
+                                      <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: t.color ?? undefined }} />
+                                      {t.short_code}
+                                      {t.full_name && <span className="text-muted-foreground text-xs">– {t.full_name}</span>}
+                                    </button>
+                                  ))}
+                                </PopoverContent>
+                              </Popover>
+                            )}
                           </div>
                         </TableCell>
                         <TableCell>
