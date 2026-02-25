@@ -409,7 +409,7 @@ export default function Portfolio() {
   const [manageOpen, setManageOpen] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("current_value");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const [deployOpen, setDeployOpen] = useState(false);
+  const [deployOpen, setDeployOpen] = useState(true);
   const { settings, loading: settingsLoading, refetch: refetchSettings } = usePortfolioSettings();
   const fmpApiKey = settings.fmp_api_key;
   const [refreshing, setRefreshing] = useState(false);
@@ -625,19 +625,22 @@ export default function Portfolio() {
     return stockPositions
       .filter((p) => p.tier != null || (p.category != null && settings.categories.find(c => c.key === p.category)?.tiers.length === 0))
       .map((p) => {
-        const weight = ((p.current_value ?? 0) / grandTotal) * 100;
+        const currentVal = p.current_value ?? 0;
+        const weight = (currentVal / grandTotal) * 100;
         const goal = getPositionGoal({ tier: p.tier, category: p.category as Category }, settings);
         if (goal == null) return null;
         const goalValue = (goal / 100) * grandTotal;
-        const diff = goalValue - (p.current_value ?? 0);
+        const diff = goalValue - currentVal;
         const tolerance = goalValue * 0.02;
         if (diff <= tolerance) return null;
         return {
           symbol: p.symbol,
           tier: p.tier ?? (p.category as string),
+          currentValue: currentVal,
           weight,
+          goalValue,
           goal,
-          toGoal: diff,
+          toBuy: diff,
           category: p.category as string,
         };
       })
@@ -647,7 +650,7 @@ export default function Portfolio() {
         const bOrder = b!.tier ? (tierOrder[b!.tier] ?? 99) : 99;
         return aOrder - bOrder;
       }) as {
-      symbol: string; tier: string; weight: number; goal: number; toGoal: number; category: string;
+      symbol: string; tier: string; currentValue: number; weight: number; goalValue: number; goal: number; toBuy: number; category: string;
     }[];
   }, [stockPositions, grandTotal, settings]);
 
@@ -658,6 +661,7 @@ export default function Portfolio() {
       .filter((p) => p.tier != null || (p.category != null && settings.categories.find(c => c.key === p.category)?.tiers.length === 0))
       .map((p) => {
         const currentVal = p.current_value ?? 0;
+        const weight = (currentVal / grandTotal) * 100;
         const goal = getPositionGoal({ tier: p.tier, category: p.category as Category }, settings);
         if (goal == null) return null;
         const goalValue = (goal / 100) * grandTotal;
@@ -668,14 +672,16 @@ export default function Portfolio() {
           symbol: p.symbol,
           tier: p.tier ?? (p.category as string),
           currentValue: currentVal,
+          weight,
           goalValue,
+          goal: goal,
           toTrim: excess,
           category: p.category as string,
         };
       })
       .filter(Boolean)
       .sort((a, b) => b!.toTrim - a!.toTrim) as {
-      symbol: string; tier: string; currentValue: number; goalValue: number; toTrim: number; category: string;
+      symbol: string; tier: string; currentValue: number; weight: number; goalValue: number; goal: number; toTrim: number; category: string;
     }[];
   }, [stockPositions, grandTotal, settings]);
 
@@ -1183,7 +1189,6 @@ export default function Portfolio() {
               <CardHeader className="cursor-pointer hover:bg-muted/30 transition-colors">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base flex items-center gap-2">
-                    <RefreshCw className="h-4 w-4" />
                     Rebalance Capital
                     {cashBalance > 0 && (
                       <span className="text-sm font-normal text-muted-foreground">
@@ -1205,10 +1210,10 @@ export default function Portfolio() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Symbol</TableHead>
-                          <TableHead>Tier</TableHead>
+                          <TableHead>Category / Tier</TableHead>
                           <TableHead className="text-right">Current</TableHead>
-                          <TableHead className="text-right">Goal</TableHead>
-                          <TableHead className="text-right">To Goal</TableHead>
+                          <TableHead className="text-right">Target</TableHead>
+                          <TableHead className="text-right">To Buy</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1229,9 +1234,15 @@ export default function Portfolio() {
                                   {item.tier}
                                 </span>
                               </TableCell>
-                              <TableCell className="text-right text-muted-foreground">{fmtPct(item.weight)}</TableCell>
-                              <TableCell className="text-right text-muted-foreground">{fmtPct(item.goal)}</TableCell>
-                              <TableCell className="text-right font-medium text-emerald-600 dark:text-emerald-400">{fmt(item.toGoal)}</TableCell>
+                              <TableCell className="text-right text-muted-foreground">
+                                <div>{fmt(item.currentValue)}</div>
+                                <div className="text-xs">{fmtPct(item.weight)}</div>
+                              </TableCell>
+                              <TableCell className="text-right text-muted-foreground">
+                                <div>{fmt(item.goalValue)}</div>
+                                <div className="text-xs">{fmtPct(item.goal)}</div>
+                              </TableCell>
+                              <TableCell className="text-right font-medium text-emerald-600 dark:text-emerald-400">{fmt(item.toBuy)}</TableCell>
                             </TableRow>
                           );
                         })}
@@ -1250,8 +1261,8 @@ export default function Portfolio() {
                         <TableRow>
                           <TableHead>Symbol</TableHead>
                           <TableHead>Category / Tier</TableHead>
-                          <TableHead className="text-right">Current Value</TableHead>
-                          <TableHead className="text-right">Goal</TableHead>
+                          <TableHead className="text-right">Current</TableHead>
+                          <TableHead className="text-right">Target</TableHead>
                           <TableHead className="text-right">To Trim</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -1273,8 +1284,14 @@ export default function Portfolio() {
                                   {item.tier}
                                 </span>
                               </TableCell>
-                              <TableCell className="text-right text-muted-foreground">{fmt(item.currentValue)}</TableCell>
-                              <TableCell className="text-right text-muted-foreground">{fmt(item.goalValue)}</TableCell>
+                              <TableCell className="text-right text-muted-foreground">
+                                <div>{fmt(item.currentValue)}</div>
+                                <div className="text-xs">{fmtPct(item.weight)}</div>
+                              </TableCell>
+                              <TableCell className="text-right text-muted-foreground">
+                                <div>{fmt(item.goalValue)}</div>
+                                <div className="text-xs">{fmtPct(item.goal)}</div>
+                              </TableCell>
                               <TableCell className="text-right font-medium text-amber-600 dark:text-amber-400">{fmt(item.toTrim)}</TableCell>
                             </TableRow>
                           );
