@@ -879,16 +879,45 @@ export default function Portfolio() {
       {positions.length > 0 && (
         <Card>
           <CardContent className="py-4">
-            {/* Stacked bar */}
-            <div className="flex h-3 w-full rounded-full overflow-hidden mb-4">
-              {categoryBreakdown.filter((c) => c.value > 0).map((c) => (
-                <div
-                  key={c.key}
-                  className="transition-all"
-                  style={{ width: `${c.pct}%`, backgroundColor: CATEGORY_COLORS[c.key]?.bar ?? "rgba(100,116,139,0.3)" }}
-                />
-              ))}
-            </div>
+            {/* Stacked bar — invested categories + cash */}
+            {(() => {
+              const investedPct = grandTotal > 0 ? (totalEquity / grandTotal) * 100 : 0;
+              const cashPct = grandTotal > 0 ? (cashBalance / grandTotal) * 100 : 0;
+              return (
+                <>
+                  <div className="flex h-3 w-full rounded-full overflow-hidden">
+                    {categoryBreakdown.filter((c) => c.value > 0).map((c) => {
+                      const widthOfGrand = grandTotal > 0 ? (c.value / grandTotal) * 100 : 0;
+                      return (
+                        <div
+                          key={c.key}
+                          className="transition-all"
+                          style={{ width: `${widthOfGrand}%`, backgroundColor: CATEGORY_COLORS[c.key]?.bar ?? "rgba(100,116,139,0.3)" }}
+                        />
+                      );
+                    })}
+                    {cashPct > 0 && (
+                      <div
+                        className="transition-all"
+                        style={{
+                          width: `${cashPct}%`,
+                          background: "repeating-linear-gradient(135deg, transparent, transparent 2px, rgba(100,116,139,0.15) 2px, rgba(100,116,139,0.15) 4px)",
+                          backgroundColor: "rgba(100,116,139,0.08)",
+                        }}
+                      />
+                    )}
+                  </div>
+                  <div className="flex justify-between mt-1.5 mb-4">
+                    <span className="text-xs text-muted-foreground">
+                      Invested: {fmt(totalEquity)} ({fmtPct(investedPct)})
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      Available: {fmt(cashBalance)} ({fmtPct(cashPct)})
+                    </span>
+                  </div>
+                </>
+              );
+            })()}
             {/* Legend with targets */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {categoryBreakdown.map((c) => (
