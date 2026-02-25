@@ -92,6 +92,39 @@ export type Database = {
         }
         Relationships: []
       }
+      position_tags: {
+        Row: {
+          assigned_at: string
+          position_id: string
+          tag_id: string
+        }
+        Insert: {
+          assigned_at?: string
+          position_id: string
+          tag_id: string
+        }
+        Update: {
+          assigned_at?: string
+          position_id?: string
+          tag_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "position_tags_position_id_fkey"
+            columns: ["position_id"]
+            isOneToOne: false
+            referencedRelation: "positions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "position_tags_tag_id_fkey"
+            columns: ["tag_id"]
+            isOneToOne: false
+            referencedRelation: "tags"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       positions: {
         Row: {
           account: Json | null
@@ -106,6 +139,7 @@ export type Database = {
           id: string
           last_price_update: string | null
           notes: string | null
+          removed_tag_ids: Json
           shares: number | null
           source: string | null
           symbol: string
@@ -126,6 +160,7 @@ export type Database = {
           id?: string
           last_price_update?: string | null
           notes?: string | null
+          removed_tag_ids?: Json
           shares?: number | null
           source?: string | null
           symbol: string
@@ -146,6 +181,7 @@ export type Database = {
           id?: string
           last_price_update?: string | null
           notes?: string | null
+          removed_tag_ids?: Json
           shares?: number | null
           source?: string | null
           symbol?: string

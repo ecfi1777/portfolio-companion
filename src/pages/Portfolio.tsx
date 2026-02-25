@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, Fragment, useMemo } from "react";
+import { useEffect, useState, useCallback, Fragment, useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { DollarSign, TrendingUp, Hash, ChevronRight, Upload, ArrowUpDown, Tag, Banknote, ChevronDown, AlertTriangle, Trash2, Calendar, RefreshCw, Clock, Settings } from "lucide-react";
+import { DollarSign, TrendingUp, Hash, ChevronRight, Upload, ArrowUpDown, Tag, Banknote, ChevronDown, AlertTriangle, Trash2, Calendar, RefreshCw, Clock, Settings, X, Plus } from "lucide-react";
 import { UpdatePortfolioModal } from "@/components/UpdatePortfolioModal";
 import { ManagePortfolioDialog } from "@/components/ManagePortfolioSection";
 import { CategorySelector } from "@/components/CategorySelector";
@@ -14,6 +14,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { usePortfolioSettings, type PortfolioSettings, type CategoryConfig, getCategoryTargets, getTierTarget, getCategoryForTier, getCategoryPerPositionTarget, buildTierOrder } from "@/hooks/use-portfolio-settings";
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
 import type { Tables } from "@/integrations/supabase/types";
 import { fetchProfilesBatched } from "@/lib/fmp-api";
@@ -21,6 +22,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 
 type Position = Tables<"positions">;
 type PortfolioSummary = Tables<"portfolio_summary">;
+type TagRow = Tables<"tags">;
 type Category = string | null;
 type Tier = string | null;
 
@@ -80,7 +82,6 @@ function getTierGoal(tier: Tier, settings: PortfolioSettings): number | null {
   return getTierTarget(tier, settings);
 }
 
-/** Get the per-position goal for a position (tier-based or category-based) */
 function getPositionGoal(p: { tier: Tier; category: Category }, settings: PortfolioSettings): number | null {
   if (p.tier) return getTierGoal(p.tier, settings);
   if (p.category) {
@@ -109,6 +110,31 @@ function getCapitalToGoal(
   return { label: `↓ ${fmt(Math.abs(diff))}`, type: "above", targetDollar: goalValue, deltaDollar: -Math.abs(diff) };
 }
 
+/** Tag badge component matching watchlist style */
+function TagBadge({ tag, onRemove }: { tag: TagRow; onRemove?: () => void }) {
+  const color = tag.color || "#64748b";
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-md border font-medium group"
+      style={{
+        backgroundColor: hexToRgba(color, 0.2),
+        color: color,
+        borderColor: hexToRgba(color, 0.4),
+      }}
+    >
+      {tag.short_code}
+      {onRemove && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          className="opacity-0 group-hover:opacity-100 transition-opacity ml-0.5"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      )}
+    </span>
+  );
+}
+
 function PositionDetailPanel({
   position,
   onUpdate,
@@ -116,6 +142,10 @@ function PositionDetailPanel({
   onCategoryUpdate,
   tierCounts,
   categoryCounts,
+  positionTags,
+  allTags,
+  onAddTag,
+  onRemoveTag,
 }: {
   position: Position;
   onUpdate: (updates: Partial<Position>) => void;
@@ -123,11 +153,19 @@ function PositionDetailPanel({
   onCategoryUpdate: (cat: Category, tier: Tier) => void;
   tierCounts: Record<string, number>;
   categoryCounts: Record<string, number>;
+  positionTags: TagRow[];
+  allTags: TagRow[];
+  onAddTag: (tagId: string) => void;
+  onRemoveTag: (tagId: string) => void;
 }) {
   const { toast } = useToast();
   const [notes, setNotes] = useState(position.notes ?? "");
   const [source, setSource] = useState(position.source ?? "");
   const [deleting, setDeleting] = useState(false);
+  const [addTagOpen, setAddTagOpen] = useState(false);
+
+  const assignedTagIds = new Set(positionTags.map((t) => t.id));
+  const availableTags = allTags.filter((t) => !assignedTagIds.has(t.id) && t.is_active);
 
   const saveField = async (field: "notes" | "source", value: string) => {
     const update: Record<string, string | null> = { [field]: value || null };
@@ -164,6 +202,41 @@ function PositionDetailPanel({
             ? `Tracked since ${format(new Date(firstSeen), "MMM d, yyyy")}`
             : "—"}
         </span>
+      </div>
+
+      {/* Tags section */}
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-muted-foreground">Tags</label>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {positionTags.map((tag) => (
+            <TagBadge key={tag.id} tag={tag} onRemove={() => onRemoveTag(tag.id)} />
+          ))}
+          <Popover open={addTagOpen} onOpenChange={setAddTagOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="h-6 px-2 text-xs">
+                <Plus className="h-3 w-3 mr-1" />
+                Add
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-48 p-2" align="start">
+              {availableTags.length === 0 ? (
+                <p className="text-xs text-muted-foreground p-1">No more tags available</p>
+              ) : (
+                <div className="flex flex-col gap-1 max-h-48 overflow-y-auto">
+                  {availableTags.map((tag) => (
+                    <button
+                      key={tag.id}
+                      className="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted text-left text-sm"
+                      onClick={() => { onAddTag(tag.id); setAddTagOpen(false); }}
+                    >
+                      <TagBadge tag={tag} />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </PopoverContent>
+          </Popover>
+        </div>
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">
@@ -252,20 +325,157 @@ export default function Portfolio() {
   const [refreshProgress, setRefreshProgress] = useState<{ done: number; total: number } | null>(null);
   const [autoRefreshed, setAutoRefreshed] = useState(false);
 
+  // Tag state
+  const [allTags, setAllTags] = useState<TagRow[]>([]);
+  const [positionTagMap, setPositionTagMap] = useState<Record<string, string[]>>({}); // positionId -> tagId[]
+  const syncedRef = useRef(false);
+
   const fetchData = useCallback(async () => {
     if (!user) return;
-    const [posRes, sumRes] = await Promise.all([
+    const [posRes, sumRes, tagsRes, ptRes] = await Promise.all([
       supabase.from("positions").select("*"),
       supabase.from("portfolio_summary").select("*").maybeSingle(),
+      supabase.from("tags").select("*"),
+      supabase.from("position_tags").select("position_id, tag_id"),
     ]);
     if (posRes.data) setPositions(posRes.data);
     if (sumRes.data) setSummary(sumRes.data);
+    if (tagsRes.data) setAllTags(tagsRes.data);
+    if (ptRes.data) {
+      const map: Record<string, string[]> = {};
+      for (const row of ptRes.data) {
+        if (!map[row.position_id]) map[row.position_id] = [];
+        map[row.position_id].push(row.tag_id);
+      }
+      setPositionTagMap(map);
+    }
     setLoading(false);
   }, [user]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Auto-sync tags from watchlist (runs once after data loads)
+  useEffect(() => {
+    if (loading || syncedRef.current || !user || positions.length === 0) return;
+    syncedRef.current = true;
+
+    (async () => {
+      // Fetch watchlist entries + their tags
+      const [wlRes, wlTagsRes] = await Promise.all([
+        supabase.from("watchlist_entries").select("id, symbol"),
+        supabase.from("watchlist_entry_tags").select("watchlist_entry_id, tag_id"),
+      ]);
+      if (!wlRes.data || !wlTagsRes.data) return;
+
+      // Build symbol -> watchlist tag IDs map
+      const wlTagsByEntryId: Record<string, string[]> = {};
+      for (const row of wlTagsRes.data) {
+        if (!wlTagsByEntryId[row.watchlist_entry_id]) wlTagsByEntryId[row.watchlist_entry_id] = [];
+        wlTagsByEntryId[row.watchlist_entry_id].push(row.tag_id);
+      }
+
+      const symbolToWlTags: Record<string, string[]> = {};
+      for (const entry of wlRes.data) {
+        const tags = wlTagsByEntryId[entry.id];
+        if (tags?.length) symbolToWlTags[entry.symbol.toUpperCase()] = tags;
+      }
+
+      // Determine tags to insert
+      const toInsert: { position_id: string; tag_id: string }[] = [];
+
+      for (const pos of positions) {
+        const wlTags = symbolToWlTags[pos.symbol.toUpperCase()];
+        if (!wlTags?.length) continue;
+
+        const existingTagIds = new Set(positionTagMap[pos.id] || []);
+        const removedTagIds = new Set<string>(
+          Array.isArray(pos.removed_tag_ids) ? (pos.removed_tag_ids as string[]) : []
+        );
+
+        for (const tagId of wlTags) {
+          if (!existingTagIds.has(tagId) && !removedTagIds.has(tagId)) {
+            toInsert.push({ position_id: pos.id, tag_id: tagId });
+          }
+        }
+      }
+
+      if (toInsert.length > 0) {
+        const { error } = await supabase.from("position_tags").insert(toInsert);
+        if (!error) {
+          // Update local state
+          setPositionTagMap((prev) => {
+            const next = { ...prev };
+            for (const row of toInsert) {
+              if (!next[row.position_id]) next[row.position_id] = [];
+              next[row.position_id] = [...next[row.position_id], row.tag_id];
+            }
+            return next;
+          });
+        }
+      }
+    })();
+  }, [loading, user, positions, positionTagMap]);
+
+  // Tag helpers
+  const getTagsForPosition = useCallback(
+    (positionId: string): TagRow[] => {
+      const tagIds = positionTagMap[positionId] || [];
+      return tagIds.map((id) => allTags.find((t) => t.id === id)).filter(Boolean) as TagRow[];
+    },
+    [positionTagMap, allTags]
+  );
+
+  const handleAddTag = useCallback(
+    async (positionId: string, tagId: string) => {
+      const { error } = await supabase.from("position_tags").insert({ position_id: positionId, tag_id: tagId });
+      if (error) {
+        toast({ title: "Failed to add tag", description: error.message, variant: "destructive" });
+        return;
+      }
+      // Remove from removed_tag_ids if present
+      const pos = positions.find((p) => p.id === positionId);
+      const removedIds = Array.isArray(pos?.removed_tag_ids) ? (pos.removed_tag_ids as string[]) : [];
+      if (removedIds.includes(tagId)) {
+        const newRemoved = removedIds.filter((id) => id !== tagId);
+        await supabase.from("positions").update({ removed_tag_ids: newRemoved }).eq("id", positionId);
+        setPositions((prev) =>
+          prev.map((p) => (p.id === positionId ? { ...p, removed_tag_ids: newRemoved } : p))
+        );
+      }
+      setPositionTagMap((prev) => ({
+        ...prev,
+        [positionId]: [...(prev[positionId] || []), tagId],
+      }));
+    },
+    [positions, toast]
+  );
+
+  const handleRemoveTag = useCallback(
+    async (positionId: string, tagId: string) => {
+      const { error } = await supabase.from("position_tags").delete().eq("position_id", positionId).eq("tag_id", tagId);
+      if (error) {
+        toast({ title: "Failed to remove tag", description: error.message, variant: "destructive" });
+        return;
+      }
+      // Add to removed_tag_ids
+      const pos = positions.find((p) => p.id === positionId);
+      const removedIds = Array.isArray(pos?.removed_tag_ids) ? (pos.removed_tag_ids as string[]) : [];
+      if (!removedIds.includes(tagId)) {
+        const newRemoved = [...removedIds, tagId];
+        await supabase.from("positions").update({ removed_tag_ids: newRemoved }).eq("id", positionId);
+        setPositions((prev) =>
+          prev.map((p) => (p.id === positionId ? { ...p, removed_tag_ids: newRemoved } : p))
+        );
+      }
+      setPositionTagMap((prev) => ({
+        ...prev,
+        [positionId]: (prev[positionId] || []).filter((id) => id !== tagId),
+      }));
+    },
+    [positions, toast]
+  );
 
   // Derived calculations
   const stockPositions = positions.filter((p) => p.symbol !== "CASH");
@@ -651,6 +861,7 @@ export default function Portfolio() {
                   <SortableHead label="Portfolio Weight" sortKeyName="weight" className="text-right" />
                   <TableHead className="text-right">Allocation Target</TableHead>
                   <SortableHead label="Category" sortKeyName="category" />
+                  <TableHead>Tags</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -666,6 +877,7 @@ export default function Portfolio() {
                   const posGoal = getPositionGoal({ tier: p.tier, category: p.category as Category }, settings);
                   const capitalToGoal = isCash ? null : getCapitalToGoal(weight, { tier: p.tier, category: p.category as Category }, p.current_value ?? 0, grandTotal, settings);
                   const catColors = CATEGORY_COLORS[(p.category as string) ?? ""];
+                  const pTags = isCash ? [] : getTagsForPosition(p.id);
 
                   return (
                     <Fragment key={p.id}>
@@ -745,6 +957,21 @@ export default function Portfolio() {
                             />
                           )}
                         </TableCell>
+                        {/* Tags column */}
+                        <TableCell>
+                          {isCash ? null : pTags.length === 0 ? (
+                            <span className="text-muted-foreground/40 text-xs">—</span>
+                          ) : (
+                            <div className="flex flex-wrap gap-1 max-w-[180px]">
+                              {pTags.slice(0, 3).map((tag) => (
+                                <TagBadge key={tag.id} tag={tag} />
+                              ))}
+                              {pTags.length > 3 && (
+                                <span className="text-xs text-muted-foreground px-1">+{pTags.length - 3}</span>
+                              )}
+                            </div>
+                          )}
+                        </TableCell>
                       </TableRow>
                       {isExpanded && accounts.map((acct, i) => (
                         <TableRow key={`${p.id}-acct-${i}`} className="bg-muted/30">
@@ -754,12 +981,12 @@ export default function Portfolio() {
                           <TableCell className="text-right text-sm text-muted-foreground">{isCash ? fmt(acct.shares) : fmtShares(acct.shares)}</TableCell>
                           <TableCell></TableCell>
                           <TableCell className="text-right text-sm text-muted-foreground">{fmt(acct.value)}</TableCell>
-                          <TableCell colSpan={6}></TableCell>
+                          <TableCell colSpan={7}></TableCell>
                         </TableRow>
                       ))}
                       {isExpanded && !isCash && (
                         <TableRow className="bg-muted/10 border-t border-border/50">
-                          <TableCell colSpan={12} className="p-0">
+                          <TableCell colSpan={13} className="p-0">
                             <PositionDetailPanel
                               position={p}
                               onUpdate={(updates) => {
@@ -775,6 +1002,10 @@ export default function Portfolio() {
                               onCategoryUpdate={(cat, tier) => handleCategoryUpdate(p.id, cat, tier)}
                               tierCounts={tierCounts}
                               categoryCounts={categoryCounts}
+                              positionTags={pTags}
+                              allTags={allTags}
+                              onAddTag={(tagId) => handleAddTag(p.id, tagId)}
+                              onRemoveTag={(tagId) => handleRemoveTag(p.id, tagId)}
                             />
                           </TableCell>
                         </TableRow>
