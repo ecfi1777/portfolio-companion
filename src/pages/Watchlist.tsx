@@ -213,6 +213,9 @@ export default function Watchlist() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<WatchlistEntry | null>(null);
   const [deleteAlertConfirm, setDeleteAlertConfirm] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   // Collapsible section states
   const [alertsOpen, setAlertsOpen] = useState(false);
@@ -344,6 +347,53 @@ export default function Watchlist() {
       setDeleteConfirm(null);
     }
   };
+
+  // Bulk selection helpers
+  const toggleSelectOne = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const visibleIds = useMemo(() => new Set(processed.map((e) => e.id)), [processed]);
+  const allVisibleSelected = visibleIds.size > 0 && [...visibleIds].every((id) => selectedIds.has(id));
+
+  const toggleSelectAll = useCallback(() => {
+    if (allVisibleSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        visibleIds.forEach((id) => next.delete(id));
+        return next;
+      });
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        visibleIds.forEach((id) => next.add(id));
+        return next;
+      });
+    }
+  }, [allVisibleSelected, visibleIds]);
+
+  const handleBulkDelete = async () => {
+    setBulkDeleting(true);
+    const ids = [...selectedIds];
+    for (const id of ids) {
+      await deleteEntry(id);
+    }
+    setBulkDeleting(false);
+    setBulkDeleteOpen(false);
+    setSelectedIds(new Set());
+    setExpandedId(null);
+    toast({ title: `Deleted ${ids.length} entries from watchlist.` });
+  };
+
+  const selectedSymbols = useMemo(
+    () => entries.filter((e) => selectedIds.has(e.id)).map((e) => e.symbol),
+    [entries, selectedIds]
+  );
 
   // Auto-refresh prices on load
   const [autoRefreshed, setAutoRefreshed] = useState(false);
@@ -598,14 +648,25 @@ export default function Watchlist() {
         </Card>
       ) : (
         <Card>
+          {/* Floating bulk action bar */}
+          {selectedIds.size > 0 && (
+            <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/50">
+              <span className="text-sm font-medium">{selectedIds.size} selected</span>
+              <Button variant="destructive" size="sm" onClick={() => setBulkDeleteOpen(true)}>
+                <Trash2 className="mr-1 h-4 w-4" />
+                Delete Selected
+              </Button>
+            </div>
+          )}
           <div className="overflow-x-auto">
             <Table className="table-fixed">
               <colgroup>
+                <col className="w-[3%]" />   {/* Checkbox */}
                 <col className="w-[7%]" />   {/* Symbol */}
-                <col className="w-[17%]" />  {/* Company */}
+                <col className="w-[16%]" />  {/* Company */}
                 <col className="w-[9%]" />   {/* Price */}
-                <col className="w-[10%]" />  {/* Day Chg % */}
-                <col className="w-[11%]" />  {/* Since Added % */}
+                <col className="w-[9%]" />   {/* Day Chg % */}
+                <col className="w-[10%]" />  {/* Since Added % */}
                 <col className="w-[8%]" />   {/* Mkt Cap */}
                 <col className="w-[15%]" />  {/* Tags */}
                 <col className="w-[17%]" />  {/* Screens */}
@@ -613,6 +674,9 @@ export default function Watchlist() {
               </colgroup>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-8" onClick={(e) => e.stopPropagation()}>
+                    <Checkbox checked={allVisibleSelected} onCheckedChange={toggleSelectAll} />
+                  </TableHead>
                   <SortHeader label="Symbol" sortKey="symbol" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="whitespace-nowrap" />
                   <TableHead>Company</TableHead>
                   <SortHeader label="Price" sortKey="price" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="text-right whitespace-nowrap" />
@@ -642,6 +706,12 @@ export default function Watchlist() {
                         className="cursor-pointer"
                         onClick={() => setExpandedId(isExpanded ? null : entry.id)}
                       >
+                        <TableCell className="w-8" onClick={(e) => e.stopPropagation()}>
+                          <Checkbox
+                            checked={selectedIds.has(entry.id)}
+                            onCheckedChange={() => toggleSelectOne(entry.id)}
+                          />
+                        </TableCell>
                         <TableCell className="font-medium whitespace-nowrap">{entry.symbol}</TableCell>
                         <TableCell className="text-muted-foreground truncate overflow-hidden">{entry.company_name ?? "—"}</TableCell>
                         <TableCell className="text-right tabular-nums whitespace-nowrap">{fmtPrice(entry.current_price)}</TableCell>
@@ -743,7 +813,7 @@ export default function Watchlist() {
                       {/* Expanded row */}
                       {isExpanded && (
                         <TableRow className="bg-muted/30 hover:bg-muted/30">
-                          <TableCell colSpan={9} className="p-0">
+                          <TableCell colSpan={10} className="p-0">
                             <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-6" onClick={(e) => e.stopPropagation()}>
                               {/* Price details */}
                               <div className="space-y-2">
@@ -912,7 +982,7 @@ export default function Watchlist() {
                 })}
                 {processed.length === 0 && entries.length > 0 && (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                       No results matching your filters
                     </TableCell>
                   </TableRow>
@@ -1067,6 +1137,34 @@ export default function Watchlist() {
               }}
             >
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk delete confirmation */}
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={(o) => !o && setBulkDeleteOpen(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedIds.size} watchlist entries?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {(() => {
+                const syms = selectedSymbols;
+                if (syms.length <= 6) {
+                  return `${syms.join(", ")} will be permanently removed along with their tags and price alerts.`;
+                }
+                return `${syms.slice(0, 6).join(", ")} and ${syms.length - 6} others will be permanently removed along with their tags and price alerts.`;
+              })()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleBulkDelete}
+              disabled={bulkDeleting}
+            >
+              {bulkDeleting ? "Deleting..." : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
