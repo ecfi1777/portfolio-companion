@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { DollarSign, TrendingUp, Hash, ChevronRight, Upload, ArrowUpDown, Tag, Banknote, ChevronDown, Check, AlertTriangle, Trash2, Calendar, RefreshCw, Clock, Settings } from "lucide-react";
+import { DollarSign, TrendingUp, Hash, ChevronRight, Upload, ArrowUpDown, Tag, Banknote, ChevronDown, AlertTriangle, Trash2, Calendar, RefreshCw, Clock, Settings } from "lucide-react";
 import { UpdatePortfolioModal } from "@/components/UpdatePortfolioModal";
 import { ManagePortfolioDialog } from "@/components/ManagePortfolioSection";
 import { CategorySelector } from "@/components/CategorySelector";
@@ -649,7 +649,7 @@ export default function Portfolio() {
                   <SortableHead label="G/L ($)" sortKeyName="gainLossDollar" className="text-right" />
                   <SortableHead label="G/L (%)" sortKeyName="gainLossPct" className="text-right" />
                   <SortableHead label="Portfolio Weight" sortKeyName="weight" className="text-right" />
-                  <TableHead className="text-right">Category Goal</TableHead>
+                  <TableHead className="text-right">Allocation Target</TableHead>
                   <SortableHead label="Category" sortKeyName="category" />
                 </TableRow>
               </TableHeader>
@@ -716,20 +716,17 @@ export default function Portfolio() {
                         <TableCell className="text-right text-xs whitespace-nowrap">
                           {isCash ? "" : capitalToGoal == null ? (
                             <span className="text-muted-foreground/40">—</span>
-                          ) : capitalToGoal.type === "at" ? (
-                            <span className="inline-flex items-center gap-1 text-muted-foreground">
-                              <Check className="h-3 w-3" /> {fmt(capitalToGoal.targetDollar)}
-                            </span>
-                          ) : capitalToGoal.type === "above" ? (
-                            <span className="text-amber-600 dark:text-amber-400">
-                              <span className="text-muted-foreground">{fmt(capitalToGoal.targetDollar)}</span>
-                              {" · "}+{fmt(Math.abs(capitalToGoal.deltaDollar))} over
-                            </span>
                           ) : (
-                            <span className="text-emerald-600 dark:text-emerald-400">
-                              <span className="text-muted-foreground">{fmt(capitalToGoal.targetDollar)}</span>
-                              {" · "}−{fmt(Math.abs(capitalToGoal.deltaDollar))} under
-                            </span>
+                            <div className="flex flex-col items-end gap-0.5">
+                              <span className="text-muted-foreground">Target: {fmt(capitalToGoal.targetDollar)}</span>
+                              {capitalToGoal.type === "at" ? (
+                                <span className="text-muted-foreground">On target</span>
+                              ) : capitalToGoal.type === "above" ? (
+                                <span className="text-amber-600 dark:text-amber-400">▲ {fmt(Math.abs(capitalToGoal.deltaDollar))} over</span>
+                              ) : (
+                                <span className="text-emerald-600 dark:text-emerald-400">▼ {fmt(Math.abs(capitalToGoal.deltaDollar))} under</span>
+                              )}
+                            </div>
                           )}
                         </TableCell>
                         <TableCell>
