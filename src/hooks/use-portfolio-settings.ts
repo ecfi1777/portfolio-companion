@@ -79,13 +79,18 @@ export function getCategoryForTier(tierKey: string | null, settings: PortfolioSe
   return null;
 }
 
-/** Build a tier ordering map from settings (first category's tiers first, etc.) */
+/** Build a tier ordering map from settings (first category's tiers first, etc.)
+ *  Tier-less categories get an order entry using their category key, placed after all tiered entries. */
 export function buildTierOrder(settings: PortfolioSettings): Record<string, number> {
   const order: Record<string, number> = {};
   let idx = 0;
   for (const cat of settings.categories) {
-    for (const t of cat.tiers) {
-      order[t.key] = idx++;
+    if (cat.tiers.length > 0) {
+      for (const t of cat.tiers) {
+        order[t.key] = idx++;
+      }
+    } else {
+      order[cat.key] = idx++;
     }
   }
   return order;

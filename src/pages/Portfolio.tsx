@@ -96,7 +96,7 @@ function getCapitalToGoal(
   currentValue: number,
   grandTotal: number,
   settings: PortfolioSettings
-): { label: string; type: "below" | "at" | "above" } | null {
+): { label: string; type: "below" | "at" | "above"; targetDollar: number; deltaDollar: number } | null {
   const goal = getPositionGoal(position, settings);
   if (goal == null) return null;
 
@@ -104,9 +104,9 @@ function getCapitalToGoal(
   const diff = goalValue - currentValue;
   const tolerance = goalValue * 0.02;
 
-  if (Math.abs(diff) <= tolerance) return { label: "At goal", type: "at" };
-  if (diff > 0) return { label: `↑ ${fmt(diff)}`, type: "below" };
-  return { label: `↓ ${fmt(Math.abs(diff))}`, type: "above" };
+  if (Math.abs(diff) <= tolerance) return { label: "At goal", type: "at", targetDollar: goalValue, deltaDollar: diff };
+  if (diff > 0) return { label: `↑ ${fmt(diff)}`, type: "below", targetDollar: goalValue, deltaDollar: diff };
+  return { label: `↓ ${fmt(Math.abs(diff))}`, type: "above", targetDollar: goalValue, deltaDollar: -Math.abs(diff) };
 }
 
 function PositionDetailPanel({
@@ -717,16 +717,18 @@ export default function Portfolio() {
                           {isCash ? "" : capitalToGoal == null ? (
                             <span className="text-muted-foreground/40">—</span>
                           ) : capitalToGoal.type === "at" ? (
-                            <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
-                              <Check className="h-3 w-3" /> At goal
+                            <span className="inline-flex items-center gap-1 text-muted-foreground">
+                              <Check className="h-3 w-3" /> {fmt(capitalToGoal.targetDollar)}
                             </span>
                           ) : capitalToGoal.type === "above" ? (
-                            <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
-                              {capitalToGoal.label}
+                            <span className="text-amber-600 dark:text-amber-400">
+                              <span className="text-muted-foreground">{fmt(capitalToGoal.targetDollar)}</span>
+                              {" · "}+{fmt(Math.abs(capitalToGoal.deltaDollar))} over
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
-                              {capitalToGoal.label}
+                            <span className="text-emerald-600 dark:text-emerald-400">
+                              <span className="text-muted-foreground">{fmt(capitalToGoal.targetDollar)}</span>
+                              {" · "}−{fmt(Math.abs(capitalToGoal.deltaDollar))} under
                             </span>
                           )}
                         </TableCell>

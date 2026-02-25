@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { usePortfolioSettings, getPerPositionTarget, getCategoryPerPositionTarget, type CategoryConfig } from "@/hooks/use-portfolio-settings";
-import { Check, Settings, Info } from "lucide-react";
+import { Check, Settings, Info, AlertTriangle } from "lucide-react";
 
 type Category = string | null;
 type Tier = string | null;
@@ -36,8 +36,7 @@ export function CategorySelector({ positionId, category, tier, onUpdate, onTierS
   const { settings, updateSettings } = usePortfolioSettings();
   const [saving, setSaving] = useState(false);
 
-  // Inline tier edit state
-  const [editAlloc, setEditAlloc] = useState<number | null>(null);
+  // Inline tier/category edit state
   const [editMax, setEditMax] = useState<number | null>(null);
   const [tierSaving, setTierSaving] = useState(false);
   const [tierSaved, setTierSaved] = useState(false);
@@ -62,7 +61,6 @@ export function CategorySelector({ positionId, category, tier, onUpdate, onTierS
       updateField(null, null);
       return;
     }
-    // Check if it's a tier-less category (prefixed with "cat:")
     if (val.startsWith("cat:")) {
       const catKey = val.substring(4);
       updateField(catKey, null);
@@ -94,9 +92,13 @@ export function CategorySelector({ positionId, category, tier, onUpdate, onTierS
     return settings.categories.find((c) => c.key === category) ?? null;
   })();
 
+  // Orphan detection: category is set but doesn't match any settings category
+  const isOrphan = !!(category && !currentTierConfig && !currentCatOnly);
+
   const currentLabel = (() => {
     if (currentTierConfig) return `${currentTierConfig.cat.display_name} · ${currentTierConfig.tier.name}`;
     if (currentCatOnly) return currentCatOnly.display_name;
+    if (isOrphan) return `${category} (removed)`;
     return null;
   })();
 
@@ -104,28 +106,46 @@ export function CategorySelector({ positionId, category, tier, onUpdate, onTierS
   const selectValue = tier ?? (category && !tier ? `cat:${category}` : "");
 
   const handleSaveTier = async () => {
-    if (!currentTierConfig || editMax == null) return;
-    setTierSaving(true);
-    try {
-      const newCategories = settings.categories.map((cat) => {
-        if (cat.key !== currentTierConfig.cat.key) return cat;
-        return {
-          ...cat,
-          tiers: cat.tiers.map((t) => {
-            if (t.key !== currentTierConfig.tier.key) return t;
-            return { ...t, max_positions: Math.max(1, Math.floor(editMax)) };
-          }),
-        };
-      });
-
-      await updateSettings({ ...settings, categories: newCategories });
-      setTierSaved(true);
-      onTierSettingsChanged?.();
-      setTimeout(() => setTierSaved(false), 2000);
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
-    } finally {
-      setTierSaving(false);
+    if (currentTierConfig) {
+      if (editMax == null) return;
+      setTierSaving(true);
+      try {
+        const newCategories = settings.categories.map((cat) => {
+          if (cat.key !== currentTierConfig.cat.key) return cat;
+          return {
+            ...cat,
+            tiers: cat.tiers.map((t) => {
+              if (t.key !== currentTierConfig.tier.key) return t;
+              return { ...t, max_positions: Math.max(1, Math.floor(editMax)) };
+            }),
+          };
+        });
+        await updateSettings({ ...settings, categories: newCategories });
+        setTierSaved(true);
+        onTierSettingsChanged?.();
+        setTimeout(() => setTierSaved(false), 2000);
+      } catch (err: any) {
+        toast({ title: "Error", description: err.message, variant: "destructive" });
+      } finally {
+        setTierSaving(false);
+      }
+    } else if (currentCatOnly) {
+      if (editMax == null) return;
+      setTierSaving(true);
+      try {
+        const newCategories = settings.categories.map((cat) => {
+          if (cat.key !== currentCatOnly.key) return cat;
+          return { ...cat, target_positions: Math.max(1, Math.floor(editMax)) };
+        });
+        await updateSettings({ ...settings, categories: newCategories });
+        setTierSaved(true);
+        onTierSettingsChanged?.();
+        setTimeout(() => setTierSaved(false), 2000);
+      } catch (err: any) {
+        toast({ title: "Error", description: err.message, variant: "destructive" });
+      } finally {
+        setTierSaving(false);
+      }
     }
   };
 
@@ -135,17 +155,40 @@ export function CategorySelector({ positionId, category, tier, onUpdate, onTierS
   const fmtPct = (n: number) =>
     n.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + "%";
 
+  // Get category color for the dot
+  const catConfig = currentTierConfig?.cat ?? currentCatOnly;
+  const catColor = catConfig?.color;
+
   const selectElement = (
     <Select value={selectValue} onValueChange={handleTierSelect} disabled={saving}>
-      <SelectTrigger className="h-7 w-[130px] text-xs border-none shadow-none bg-transparent hover:bg-muted/50 px-2">
+      <SelectTrigger className="h-7 w-[140px] text-xs border-none shadow-none bg-transparent hover:bg-muted/50 px-2">
         <SelectValue placeholder={<span className="text-muted-foreground/50">Assign</span>}>
-          {currentLabel && <span>{currentLabel}</span>}
+          {currentLabel && (
+            <span className="inline-flex items-center gap-1.5">
+              {catColor && (
+                <span
+                  className="inline-block w-2 h-2 rounded-full shrink-0"
+                  style={{ backgroundColor: catColor }}
+                />
+              )}
+              {isOrphan && <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" />}
+              {currentLabel}
+            </span>
+          )}
         </SelectValue>
       </SelectTrigger>
       <SelectContent>
         {settings.categories.map((cat) => (
           <SelectGroup key={cat.key}>
-            <SelectLabel className="text-xs text-muted-foreground">{cat.display_name}</SelectLabel>
+            <SelectLabel className="text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5">
+                <span
+                  className="inline-block w-2 h-2 rounded-full"
+                  style={{ backgroundColor: cat.color }}
+                />
+                {cat.display_name}
+              </span>
+            </SelectLabel>
             {cat.tiers.length > 0 ? (
               cat.tiers.map((t) => {
                 const count = tierCounts[t.key] ?? 0;
@@ -184,6 +227,7 @@ export function CategorySelector({ positionId, category, tier, onUpdate, onTierS
     </Select>
   );
 
+  // No assignment or orphan — just show select (orphan can reassign)
   if (!currentTierConfig && !currentCatOnly) {
     return (
       <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
@@ -192,7 +236,7 @@ export function CategorySelector({ positionId, category, tier, onUpdate, onTierS
     );
   }
 
-  // Info popover content for tier-based
+  // Info popover for tier-based
   if (currentTierConfig) {
     const perPos = getPerPositionTarget(currentTierConfig.tier);
     const perPosDollar = portfolioTotal != null ? (perPos / 100) * portfolioTotal : null;
@@ -203,8 +247,7 @@ export function CategorySelector({ positionId, category, tier, onUpdate, onTierS
         {selectElement}
         <Popover
           onOpenChange={(open) => {
-            if (open && currentTierConfig) {
-              setEditAlloc(currentTierConfig.tier.allocation_pct);
+            if (open) {
               setEditMax(currentTierConfig.tier.max_positions);
               setTierSaved(false);
             }
@@ -286,32 +329,88 @@ export function CategorySelector({ positionId, category, tier, onUpdate, onTierS
   // Info popover for tier-less category
   if (currentCatOnly) {
     const perPos = getCategoryPerPositionTarget(currentCatOnly);
-    const perPosDollar = portfolioTotal != null ? (perPos / 100) * portfolioTotal : null;
+    const perPosDollar = portfolioTotal != null && perPos > 0 ? (perPos / 100) * portfolioTotal : null;
     const count = categoryCounts[currentCatOnly.key] ?? 0;
 
     return (
       <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
         {selectElement}
-        <Popover>
+        <Popover
+          onOpenChange={(open) => {
+            if (open) {
+              setEditMax(currentCatOnly.target_positions);
+              setTierSaved(false);
+            }
+          }}
+        >
           <PopoverTrigger asChild>
             <button className="p-0.5 rounded hover:bg-muted/60 text-muted-foreground hover:text-foreground transition-colors">
               <Info className="h-3.5 w-3.5" />
             </button>
           </PopoverTrigger>
-          <PopoverContent className="w-56 p-3" side="left" align="start">
-            <div className="space-y-1">
-              <p className="text-sm font-semibold">{currentCatOnly.display_name}</p>
-              {currentCatOnly.target_pct != null && (
+          <PopoverContent className="w-64 p-3" side="left" align="start">
+            <div className="space-y-3">
+              <div>
+                <p className="text-sm font-semibold">{currentCatOnly.display_name}</p>
+                {currentCatOnly.target_pct != null && perPos > 0 && (
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Target: <span className="font-medium text-foreground">{fmtPct(perPos)}</span> per position
+                    {perPosDollar != null && (
+                      <span className="text-muted-foreground"> · {fmtDollar(perPosDollar)}</span>
+                    )}
+                  </p>
+                )}
                 <p className="text-xs text-muted-foreground">
-                  Target: <span className="font-medium text-foreground">{fmtPct(perPos)}</span> per position
-                  {perPosDollar != null && (
-                    <span className="text-muted-foreground"> · {fmtDollar(perPosDollar)}</span>
-                  )}
+                  Slots: <span className="font-medium text-foreground">{count}/{currentCatOnly.target_positions}</span> filled
                 </p>
-              )}
-              <p className="text-xs text-muted-foreground">
-                Slots: <span className="font-medium text-foreground">{count}/{currentCatOnly.target_positions}</span> filled
-              </p>
+              </div>
+
+              <div className="border-t border-border pt-2 space-y-2">
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Adjust Category</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-[11px]">Allocation %</Label>
+                    <Input
+                      type="number"
+                      value={currentCatOnly.target_pct ?? 0}
+                      readOnly
+                      disabled
+                      className="h-7 text-xs opacity-60"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[11px]">Target Positions</Label>
+                    <Input
+                      type="number"
+                      step="1"
+                      min="1"
+                      value={editMax ?? currentCatOnly.target_positions}
+                      onChange={(e) => setEditMax(Math.max(1, Math.floor(Number(e.target.value))))}
+                      className="h-7 text-xs"
+                    />
+                  </div>
+                </div>
+                {editMax != null && editMax > 0 && (currentCatOnly.target_pct ?? 0) > 0 && (
+                  <p className="text-[11px] text-muted-foreground">
+                    → {fmtPct((currentCatOnly.target_pct ?? 0) / editMax)} per position
+                    {portfolioTotal != null && (
+                      <span> · {fmtDollar(((currentCatOnly.target_pct ?? 0) / 100 / editMax) * portfolioTotal)}</span>
+                    )}
+                  </p>
+                )}
+                <Button
+                  size="sm"
+                  className="w-full h-7 text-xs"
+                  onClick={handleSaveTier}
+                  disabled={tierSaving || tierSaved}
+                >
+                  {tierSaved ? (
+                    <span className="flex items-center gap-1"><Check className="h-3 w-3" /> Saved</span>
+                  ) : tierSaving ? "Saving..." : (
+                    <span className="flex items-center gap-1"><Settings className="h-3 w-3" /> Save Category</span>
+                  )}
+                </Button>
+              </div>
             </div>
           </PopoverContent>
         </Popover>
