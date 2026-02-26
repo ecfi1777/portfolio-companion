@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { usePortfolioSettings, getPerPositionTarget, getCategoryPerPositionTarget, type CategoryConfig } from "@/hooks/use-portfolio-settings";
-import { Check, Settings, Info } from "lucide-react";
+import { Check, Settings, Info, AlertTriangle } from "lucide-react";
 
 type Category = string | null;
 type Tier = string | null;
@@ -63,12 +63,23 @@ export function CategorySelector({ positionId, category, tier, onUpdate, onTierS
     }
     if (val.startsWith("cat:")) {
       const catKey = val.substring(4);
+      const cat = settings.categories.find((c) => c.key === catKey);
+      if (cat && cat.tiers.length === 0) {
+        const catCount = categoryCounts[cat.key] ?? 0;
+        if (catCount >= cat.target_positions && category !== cat.key) {
+          toast({ title: "Over capacity", description: `This exceeds the maximum of ${cat.target_positions} positions for ${cat.display_name}. Rebalancing may be necessary.` });
+        }
+      }
       updateField(catKey, null);
       return;
     }
     for (const cat of settings.categories) {
       const found = cat.tiers.find((t) => t.key === val);
       if (found) {
+        const count = tierCounts[found.key] ?? 0;
+        if (count >= found.max_positions && found.key !== tier) {
+          toast({ title: "Over capacity", description: `This exceeds the maximum of ${found.max_positions} positions for ${cat.display_name} · ${found.name}. Rebalancing may be necessary.` });
+        }
         updateField(cat.key, found.key);
         return;
       }
@@ -181,16 +192,18 @@ export function CategorySelector({ positionId, category, tier, onUpdate, onTierS
         {settings.categories.map((cat) => {
           if (cat.tiers.length === 0) {
             const catCount = categoryCounts[cat.key] ?? 0;
-            const isFull = catCount >= cat.target_positions && category !== cat.key;
+            const isOver = catCount > cat.target_positions;
+            const isAtMax = catCount >= cat.target_positions;
+            const countColor = isOver ? "text-red-600 dark:text-red-400" : isAtMax ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground";
             return (
-              <SelectItem key={`cat:${cat.key}`} value={`cat:${cat.key}`} disabled={isFull}>
-                <span className={`inline-flex items-center gap-1.5 ${isFull ? "text-muted-foreground" : ""}`}>
+              <SelectItem key={`cat:${cat.key}`} value={`cat:${cat.key}`}>
+                <span className="inline-flex items-center gap-1.5">
                   <span
                     className="inline-block w-2 h-2 rounded-full shrink-0"
                     style={{ backgroundColor: cat.color }}
                   />
                   {cat.display_name}
-                  <span className="ml-0.5 text-[10px] text-muted-foreground">
+                  <span className={`ml-0.5 text-[10px] ${countColor}`}>
                     {catCount}/{cat.target_positions}
                   </span>
                 </span>
@@ -210,12 +223,14 @@ export function CategorySelector({ positionId, category, tier, onUpdate, onTierS
               </SelectLabel>
               {cat.tiers.map((t) => {
                 const count = tierCounts[t.key] ?? 0;
-                const isFull = count >= t.max_positions && t.key !== tier;
+                const isOver = count > t.max_positions;
+                const isAtMax = count >= t.max_positions;
+                const countColor = isOver ? "text-red-600 dark:text-red-400" : isAtMax ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground";
                 return (
-                  <SelectItem key={t.key} value={t.key} disabled={isFull}>
-                    <span className={isFull ? "text-muted-foreground" : ""}>
+                  <SelectItem key={t.key} value={t.key}>
+                    <span>
                       {t.name}
-                      <span className="ml-1.5 text-[10px] text-muted-foreground">
+                      <span className={`ml-1.5 text-[10px] ${countColor}`}>
                         {count}/{t.max_positions}
                       </span>
                     </span>
@@ -271,8 +286,16 @@ export function CategorySelector({ positionId, category, tier, onUpdate, onTierS
                     <span className="text-muted-foreground"> · {fmtDollar(perPosDollar)}</span>
                   )}
                 </p>
-                <p className="text-xs text-muted-foreground">
-                  Maximum Positions: <span className="font-medium text-foreground">{count}/{currentTierConfig.tier.max_positions}</span>
+                <p className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                  Maximum Positions:{" "}
+                  {count > currentTierConfig.tier.max_positions ? (
+                    <span className="font-medium text-red-600 dark:text-red-400 inline-flex items-center gap-0.5">
+                      <AlertTriangle className="h-3 w-3" />
+                      {count}/{currentTierConfig.tier.max_positions}
+                    </span>
+                  ) : (
+                    <span className="font-medium text-foreground">{count}/{currentTierConfig.tier.max_positions}</span>
+                  )}
                 </p>
               </div>
 
@@ -363,8 +386,16 @@ export function CategorySelector({ positionId, category, tier, onUpdate, onTierS
                     )}
                   </p>
                 )}
-                <p className="text-xs text-muted-foreground">
-                  Maximum Positions: <span className="font-medium text-foreground">{count}/{currentCatOnly.target_positions}</span>
+                <p className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                  Maximum Positions:{" "}
+                  {count > currentCatOnly.target_positions ? (
+                    <span className="font-medium text-red-600 dark:text-red-400 inline-flex items-center gap-0.5">
+                      <AlertTriangle className="h-3 w-3" />
+                      {count}/{currentCatOnly.target_positions}
+                    </span>
+                  ) : (
+                    <span className="font-medium text-foreground">{count}/{currentCatOnly.target_positions}</span>
+                  )}
                 </p>
               </div>
 
