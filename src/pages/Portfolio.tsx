@@ -597,13 +597,16 @@ export default function Portfolio() {
     return counts;
   }, [stockPositions]);
 
-  // Category breakdown — driven by settings
+  // Category breakdown — driven by settings (only show settings categories + Unassigned)
   const categoryBreakdown = useMemo(() => {
+    const settingsKeys = new Set(settings.categories.map((c) => c.key));
     const groups: Record<string, number> = {};
     for (const cat of settings.categories) groups[cat.key] = 0;
     groups["Unassigned"] = 0;
     for (const p of stockPositions) {
-      const key = (p.category as string) ?? "Unassigned";
+      const rawKey = (p.category as string) ?? "Unassigned";
+      // Positions with a category that no longer exists in settings go to Unassigned
+      const key = rawKey === "Unassigned" || settingsKeys.has(rawKey) ? rawKey : "Unassigned";
       groups[key] = (groups[key] ?? 0) + (p.current_value ?? 0);
     }
     const catTargets = getCategoryTargets(settings);
