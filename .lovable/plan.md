@@ -1,38 +1,44 @@
 
 
-## Clarify the "Progress" Percentage on Category Cards
+## Watchlist Archive / Hide Entries
 
-**Problem:** The "Current" row displays something like `$72,903 (82.33%)` -- the percentage represents how far along the category is toward its target allocation, but it reads as if it's a portfolio share (which would conflict with the target of 50%).
+### Database Change
 
-**Solution:** Replace the single ambiguous percentage with two clearer data points:
+Add an `archived_at` column to `watchlist_entries`:
 
-### Proposed Card Layout
-
-```text
-Current     $72,903 — 41.17% of portfolio
-Target      $75,857 — 50.00% of portfolio  [pencil]
-Progress    82.33% of target
-Delta       ▼ $2,954 under
-Positions   6 / 10
+```sql
+ALTER TABLE public.watchlist_entries
+  ADD COLUMN archived_at timestamptz DEFAULT NULL;
 ```
 
-### Changes
+### Code Changes
 
-**Row 1 -- "Current":** Show the dollar value and the category's *actual portfolio share* (i.e., `c.value / totalEquity * 100`). Label it clearly: `$72,903 -- 41.17% of portfolio`.
+**1. `src/hooks/use-watchlist.ts` -- Hook updates**
 
-**Row 2 -- "Target":** Already shows the target percentage; append "of portfolio" for consistency.
+- Add `archived_at` to the `WatchlistEntry` interface (nullable string)
+- Add an `archiveEntries(ids: string[])` function that sets `archived_at = now()` on selected entries
+- Add an `unarchiveEntries(ids: string[])` function that sets `archived_at = null` on selected entries
+- Modify `refreshPrices` to only refresh entries where `archived_at` is null (filter the `symbols` array before calling `fetchProfilesBatched`)
 
-**Row 3 -- New "Progress" row:** Add a dedicated row showing the progress percentage (`currentValue / targetValue * 100`), labeled "Progress" on the left and `82.33% of target` on the right. This isolates the "how far along" metric from the portfolio share.
+**2. `src/pages/Watchlist.tsx` -- UI updates**
 
-Alternatively, if an extra row feels too crowded, the progress percentage could be shown as a small progress bar under the card header, making it instantly visual rather than numerical.
+- **Filter state**: Add a `showArchived` boolean state (default `false`)
+- **Filtering logic**: In the `processed` memo, when `showArchived` is OFF, filter out entries where `archived_at` is not null. When ON, show all entries.
+- **Show Archived toggle**: Add a `Switch` component next to the existing filter controls (Tags, Mkt Cap, Sector, Performance) labeled "Show Archived"
+- **Bulk action bar**: When entries are selected:
+  - If any selected entries are archived, show "Unarchive Selected" (outline button with `EyeOff` icon)
+  - Otherwise show "Archive Selected" (outline button with `Archive` icon) next to the existing "Delete Selected" button
+  - Archive action: call `archiveEntries`, clear selection, toast "Archived X entries"
+  - Unarchive action: call `unarchiveEntries`, clear selection, toast "Unarchived X entries"
+- **Archived row styling**: When an entry has `archived_at` set, apply `opacity-50` to the table row and show an "Archived" badge (muted style) next to the symbol
+- **Expanded row unarchive**: In the expanded detail panel for archived entries, show an "Unarchive" button (secondary) in the Notes/Actions section, above the "Remove from Watchlist" delete button
+- **Auto-refresh exclusion**: The auto-refresh `useEffect` already calls `refreshPrices` from the hook, which will be updated to skip archived entries
 
-### Technical Details
+### Summary of files changed
 
-- In `src/pages/Portfolio.tsx`, around lines 1087-1155 (the card rendering block):
-  - Compute `progressPct = c.target > 0 ? (c.pct / c.target) * 100 : 0`
-  - Update the "Current" row to show `{fmt(c.value)} -- {fmtPct(c.pct)} of portfolio`
-  - Update the "Target" row similarly
-  - Insert a new "Progress" row between Target and Delta showing `{fmtPct(progressPct)} of target`
-  - Optionally add a thin `<Progress>` bar (already available in `ui/progress.tsx`) below the header for a quick visual read
+| File | Change |
+|------|--------|
+| Migration SQL | Add `archived_at` column |
+| `src/hooks/use-watchlist.ts` | Add `archived_at` to interface, add archive/unarchive functions, filter archived from price refresh |
+| `src/pages/Watchlist.tsx` | Add show-archived toggle, bulk archive/unarchive buttons, archived row styling, individual unarchive button |
 
-- No database or backend changes required -- purely a display change.
