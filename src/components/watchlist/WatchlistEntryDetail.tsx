@@ -75,6 +75,9 @@ export function WatchlistEntryDetail({
     <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-6" onClick={(e) => e.stopPropagation()}>
       {/* Price details */}
       <div className="space-y-2">
+        {entry.company_name && (
+          <p className="text-sm font-medium mb-1">{entry.company_name}</p>
+        )}
         <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Price Details</h4>
         <div className="space-y-1 text-sm">
           <div className="flex justify-between">
