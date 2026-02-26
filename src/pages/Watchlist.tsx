@@ -642,8 +642,8 @@ export default function Watchlist() {
 
         <FilterDropdown label="Tags" options={tagOptions} selected={selectedTags} onToggle={(v) => toggleSet(setSelectedTags, v)} />
         <FilterDropdown label="Mkt Cap" options={capOptions} selected={selectedCaps} onToggle={(v) => toggleSet(setSelectedCaps, v)} />
-        <FilterDropdown label="Sector" options={sectorOptions} selected={selectedSectors} onToggle={(v) => toggleSet(setSelectedSectors, v)} />
         <FilterDropdown label="Group" options={groupOptions} selected={selectedGroups} onToggle={(v) => toggleSet(setSelectedGroups, v)} />
+        <FilterDropdown label="Sector" options={sectorOptions} selected={selectedSectors} onToggle={(v) => toggleSet(setSelectedSectors, v)} />
 
         {/* Performance toggle */}
         <div className="flex items-center rounded-md border border-border h-8 text-xs">
@@ -818,8 +818,9 @@ export default function Watchlist() {
                 <col className="w-[9%]" />   {/* Day Chg % */}
                 <col className="w-[10%]" />  {/* Since Added % */}
                 <col className="w-[8%]" />   {/* Mkt Cap */}
-                <col className="w-[15%]" />  {/* Tags */}
-                <col className="w-[17%]" />  {/* Screens */}
+                <col className="w-[8%]" />   {/* Group */}
+                <col className="w-[10%]" />  {/* Tags */}
+                <col className="w-[14%]" />  {/* Screens */}
                 <col className="w-[6%]" />   {/* Alert icon */}
               </colgroup>
               <TableHeader>
@@ -833,6 +834,7 @@ export default function Watchlist() {
                   <SortHeader label="Day %" sortKey="dayChg" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="text-right whitespace-nowrap" />
                   <SortHeader label="Since Add %" sortKey="sinceAdded" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="text-right whitespace-nowrap" />
                   <SortHeader label="Mkt Cap" sortKey="marketCap" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="text-center whitespace-nowrap" />
+                  <TableHead>Group</TableHead>
                   <TableHead>Tags</TableHead>
                   <SortHeader label="Screens" sortKey="heat" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="whitespace-nowrap" />
                   <TableHead></TableHead>
@@ -866,21 +868,6 @@ export default function Watchlist() {
                         <TableCell className="font-medium whitespace-nowrap">
                           <span className="inline-flex items-center gap-1.5">
                             {entry.symbol}
-                            {(() => {
-                              const grp = groups.find((g) => g.id === entry.group_id);
-                              return grp ? (
-                                <span
-                                  className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-medium border"
-                                  style={{
-                                    backgroundColor: grp.color ? `${grp.color}20` : undefined,
-                                    color: grp.color ?? undefined,
-                                    borderColor: grp.color ? `${grp.color}40` : undefined,
-                                  }}
-                                >
-                                  {grp.name}
-                                </span>
-                              ) : null;
-                            })()}
                             {isArchived && (
                               <Badge variant="secondary" className="text-[10px] opacity-75">Archived</Badge>
                             )}
@@ -900,6 +887,9 @@ export default function Watchlist() {
                               {entry.market_cap_category}
                             </Badge>
                           ) : "—"}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-sm truncate">
+                          {groups.find(g => g.id === entry.group_id)?.name ?? "—"}
                         </TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>
                           <div className="flex flex-wrap items-center gap-1">
