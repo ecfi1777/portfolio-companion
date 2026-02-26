@@ -5,12 +5,7 @@ import { enrichWatchlistEntries } from "@/lib/watchlist-enrichment";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,25 +17,24 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Eye, Plus, Settings, Bell, BellRing, ChevronDown, RefreshCw, AlertTriangle, Clock, Flame, Upload, DatabaseZap, FolderOpen, X,
+  Eye, Plus, Settings, RefreshCw, AlertTriangle, Clock, Upload, DatabaseZap, FolderOpen,
 } from "lucide-react";
 import { useWatchlist, type WatchlistEntry } from "@/hooks/use-watchlist";
 import { usePortfolioSettings } from "@/hooks/use-portfolio-settings";
-import { useAlerts, type AlertType } from "@/hooks/use-alerts";
+import { useAlerts } from "@/hooks/use-alerts";
 import { AddToWatchlistModal } from "@/components/AddToWatchlistModal";
 import { ManageTagsModal } from "@/components/ManageTagsModal";
 import { ManageGroupsModal } from "@/components/ManageGroupsModal";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/hooks/use-toast";
 
-import { fmtPrice, fmtPct, fmtDollar, CAP_COLORS, CAP_ORDER, calcDayChg, calcSinceAdded, pctColor } from "@/lib/watchlist-utils";
+import { CAP_ORDER, calcDayChg, calcSinceAdded } from "@/lib/watchlist-utils";
 import { WatchlistFilters } from "@/components/watchlist/WatchlistFilters";
 import { WatchlistBulkActions } from "@/components/watchlist/WatchlistBulkActions";
-import { WatchlistEntryDetail } from "@/components/watchlist/WatchlistEntryDetail";
 import { WatchlistGroupTabs } from "@/components/watchlist/WatchlistGroupTabs";
-import { SortHeader } from "@/components/watchlist/SortHeader";
+import { WatchlistTable } from "@/components/watchlist/WatchlistTable";
+import { WatchlistAlertsSection } from "@/components/watchlist/WatchlistAlertsSection";
+import { AlertPopover } from "@/components/watchlist/AlertPopover";
 
 type SortKey = "symbol" | "price" | "dayChg" | "sinceAdded" | "marketCap" | "dateAdded" | "heat";
 
@@ -90,6 +84,7 @@ export default function Watchlist() {
       setScreenHitsMap(map);
     });
   }, [user]);
+
   const [refreshing, setRefreshing] = useState(false);
   const [refreshProgress, setRefreshProgress] = useState<{ done: number; total: number } | null>(null);
   const [reEnriching, setReEnriching] = useState(false);
@@ -107,8 +102,6 @@ export default function Watchlist() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
-
-  // Collapsible section states
   const [alertsOpen, setAlertsOpen] = useState(false);
 
   // Filters
@@ -173,44 +166,24 @@ export default function Watchlist() {
   // Filter + sort
   const processed = useMemo(() => {
     let result = entries;
-
-    if (!showArchived) {
-      result = result.filter((e) => !e.archived_at);
-    }
+    if (!showArchived) result = result.filter((e) => !e.archived_at);
     if (search.trim()) {
       const q = search.toLowerCase();
-      result = result.filter(
-        (e) => e.symbol.toLowerCase().includes(q) || (e.company_name?.toLowerCase().includes(q) ?? false)
-      );
+      result = result.filter((e) => e.symbol.toLowerCase().includes(q) || (e.company_name?.toLowerCase().includes(q) ?? false));
     }
-
     if (groupTab !== "all") {
-      if (groupTab === "__ungrouped__") {
-        result = result.filter((e) => !e.group_id);
-      } else {
-        result = result.filter((e) => e.group_id === groupTab);
-      }
+      if (groupTab === "__ungrouped__") result = result.filter((e) => !e.group_id);
+      else result = result.filter((e) => e.group_id === groupTab);
     }
-
     if (selectedGroups.size > 0) {
       result = result.filter((e) => {
         if (selectedGroups.has("__ungrouped__") && !e.group_id) return true;
         return e.group_id ? selectedGroups.has(e.group_id) : false;
       });
     }
-
-    if (selectedTags.size > 0) {
-      result = result.filter((e) => e.tags?.some((t) => selectedTags.has(t.id)));
-    }
-
-    if (selectedCaps.size > 0) {
-      result = result.filter((e) => e.market_cap_category && selectedCaps.has(e.market_cap_category));
-    }
-
-    if (selectedSectors.size > 0) {
-      result = result.filter((e) => e.sector && selectedSectors.has(e.sector));
-    }
-
+    if (selectedTags.size > 0) result = result.filter((e) => e.tags?.some((t) => selectedTags.has(t.id)));
+    if (selectedCaps.size > 0) result = result.filter((e) => e.market_cap_category && selectedCaps.has(e.market_cap_category));
+    if (selectedSectors.size > 0) result = result.filter((e) => e.sector && selectedSectors.has(e.sector));
     if (perfFilter !== "all") {
       result = result.filter((e) => {
         const chg = calcSinceAdded(e);
@@ -218,10 +191,7 @@ export default function Watchlist() {
         return perfFilter === "gainers" ? chg >= 0 : chg < 0;
       });
     }
-
-    if (screenedFilter) {
-      result = result.filter((e) => !!screenHitsMap[e.symbol.toUpperCase()]);
-    }
+    if (screenedFilter) result = result.filter((e) => !!screenHitsMap[e.symbol.toUpperCase()]);
 
     const sorted = [...result].sort((a, b) => {
       let cmp = 0;
@@ -236,32 +206,21 @@ export default function Watchlist() {
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
-
     return sorted;
   }, [entries, search, selectedTags, selectedCaps, selectedSectors, perfFilter, screenedFilter, screenHitsMap, sortKey, sortDir, showArchived, groupTab, selectedGroups]);
 
   const activeFilters = selectedTags.size + selectedCaps.size + selectedSectors.size + selectedGroups.size + (perfFilter !== "all" ? 1 : 0) + (screenedFilter ? 1 : 0) + (showArchived ? 1 : 0);
 
   const clearFilters = () => {
-    setSelectedTags(new Set());
-    setSelectedCaps(new Set());
-    setSelectedSectors(new Set());
-    setSelectedGroups(new Set());
-    setPerfFilter("all");
-    setScreenedFilter(false);
-    setShowArchived(false);
-    setGroupTab("all");
+    setSelectedTags(new Set()); setSelectedCaps(new Set()); setSelectedSectors(new Set()); setSelectedGroups(new Set());
+    setPerfFilter("all"); setScreenedFilter(false); setShowArchived(false); setGroupTab("all");
   };
 
   const handleNotesBlur = async (entryId: string) => {
     const val = editingNotes[entryId];
     if (val !== undefined) {
       await updateEntryNotes(entryId, val);
-      setEditingNotes((prev) => {
-        const next = { ...prev };
-        delete next[entryId];
-        return next;
-      });
+      setEditingNotes((prev) => { const next = { ...prev }; delete next[entryId]; return next; });
     }
   };
 
@@ -275,12 +234,7 @@ export default function Watchlist() {
 
   // Bulk selection helpers
   const toggleSelectOne = useCallback((id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    setSelectedIds((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   }, []);
 
   const visibleIds = useMemo(() => new Set(processed.map((e) => e.id)), [processed]);
@@ -288,37 +242,21 @@ export default function Watchlist() {
 
   const toggleSelectAll = useCallback(() => {
     if (allVisibleSelected) {
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        visibleIds.forEach((id) => next.delete(id));
-        return next;
-      });
+      setSelectedIds((prev) => { const next = new Set(prev); visibleIds.forEach((id) => next.delete(id)); return next; });
     } else {
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        visibleIds.forEach((id) => next.add(id));
-        return next;
-      });
+      setSelectedIds((prev) => { const next = new Set(prev); visibleIds.forEach((id) => next.add(id)); return next; });
     }
   }, [allVisibleSelected, visibleIds]);
 
   const handleBulkDelete = async () => {
     setBulkDeleting(true);
     const ids = [...selectedIds];
-    for (const id of ids) {
-      await deleteEntry(id);
-    }
-    setBulkDeleting(false);
-    setBulkDeleteOpen(false);
-    setSelectedIds(new Set());
-    setExpandedId(null);
+    for (const id of ids) await deleteEntry(id);
+    setBulkDeleting(false); setBulkDeleteOpen(false); setSelectedIds(new Set()); setExpandedId(null);
     toast({ title: `Deleted ${ids.length} entries from watchlist.` });
   };
 
-  const selectedSymbols = useMemo(
-    () => entries.filter((e) => selectedIds.has(e.id)).map((e) => e.symbol),
-    [entries, selectedIds]
-  );
+  const selectedSymbols = useMemo(() => entries.filter((e) => selectedIds.has(e.id)).map((e) => e.symbol), [entries, selectedIds]);
 
   // Auto-refresh prices on load
   const [autoRefreshed, setAutoRefreshed] = useState(false);
@@ -329,11 +267,7 @@ export default function Watchlist() {
       refreshPrices(fmpApiKey, (done, total) => setRefreshProgress({ done, total }))
         .then((result) => {
           if (result && result.failed > 0) {
-            toast({
-              title: "Price refresh",
-              description: `${result.succeeded} of ${result.total} refreshed, ${result.failed} failed.`,
-              variant: "destructive",
-            });
+            toast({ title: "Price refresh", description: `${result.succeeded} of ${result.total} refreshed, ${result.failed} failed.`, variant: "destructive" });
           }
         })
         .finally(() => { setRefreshing(false); setRefreshProgress(null); });
@@ -344,21 +278,10 @@ export default function Watchlist() {
     if (!fmpApiKey) return;
     setRefreshing(true);
     const result = await refreshPrices(fmpApiKey, (done, total) => setRefreshProgress({ done, total }));
-    setRefreshing(false);
-    setRefreshProgress(null);
+    setRefreshing(false); setRefreshProgress(null);
     if (result) {
-      if (result.failed > 0) {
-        toast({
-          title: "Price refresh",
-          description: `${result.succeeded} of ${result.total} refreshed, ${result.failed} failed.`,
-          variant: "destructive",
-        });
-      } else if (result.succeeded > 0) {
-        toast({
-          title: "Prices refreshed",
-          description: `${result.succeeded} symbol${result.succeeded !== 1 ? "s" : ""} updated.`,
-        });
-      }
+      if (result.failed > 0) toast({ title: "Price refresh", description: `${result.succeeded} of ${result.total} refreshed, ${result.failed} failed.`, variant: "destructive" });
+      else if (result.succeeded > 0) toast({ title: "Prices refreshed", description: `${result.succeeded} symbol${result.succeeded !== 1 ? "s" : ""} updated.` });
     }
   };
 
@@ -372,42 +295,20 @@ export default function Watchlist() {
     const result = await enrichWatchlistEntries(user.id, nullCapSymbols, fmpApiKey);
     setReEnriching(false);
     await refetchWatchlist();
-    if (result.failed > 0) {
-      toast({
-        title: "Market data enrichment",
-        description: `${result.succeeded} of ${result.total} succeeded, ${result.failed} failed (API limit). Use Re-enrich to retry.`,
-        variant: "destructive",
-      });
-    } else if (result.succeeded > 0) {
-      toast({
-        title: "Market data enrichment complete",
-        description: `${result.succeeded} symbol${result.succeeded !== 1 ? "s" : ""} updated.`,
-      });
-    } else {
-      toast({
-        title: "No updates",
-        description: "No market data could be fetched. Your API plan may not cover these endpoints.",
-      });
-    }
+    if (result.failed > 0) toast({ title: "Market data enrichment", description: `${result.succeeded} of ${result.total} succeeded, ${result.failed} failed (API limit). Use Re-enrich to retry.`, variant: "destructive" });
+    else if (result.succeeded > 0) toast({ title: "Market data enrichment complete", description: `${result.succeeded} symbol${result.succeeded !== 1 ? "s" : ""} updated.` });
+    else toast({ title: "No updates", description: "No market data could be fetched. Your API plan may not cover these endpoints." });
   };
 
   // Staleness
   const latestUpdate = useMemo(() => {
-    const dates = entries
-      .map((e) => e.last_price_update)
-      .filter(Boolean)
-      .map((d: string) => new Date(d).getTime());
+    const dates = entries.map((e) => e.last_price_update).filter(Boolean).map((d: string) => new Date(d).getTime());
     return dates.length > 0 ? new Date(Math.max(...dates)) : null;
   }, [entries]);
-
   const isStale = latestUpdate ? Date.now() - latestUpdate.getTime() > 24 * 60 * 60 * 1000 : false;
 
   if (loading) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <p className="text-muted-foreground">Loading watchlist...</p>
-      </div>
-    );
+    return <div className="flex h-full items-center justify-center"><p className="text-muted-foreground">Loading watchlist...</p></div>;
   }
 
   return (
@@ -433,115 +334,50 @@ export default function Watchlist() {
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleManualRefresh}
-                  disabled={!fmpApiKey || refreshing}
-                >
+                <Button variant="outline" size="sm" onClick={handleManualRefresh} disabled={!fmpApiKey || refreshing}>
                   <RefreshCw className={`mr-1 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-                  {refreshing && refreshProgress
-                    ? `Refreshing ${refreshProgress.done}/${refreshProgress.total}...`
-                    : "Refresh"}
+                  {refreshing && refreshProgress ? `Refreshing ${refreshProgress.done}/${refreshProgress.total}...` : "Refresh"}
                 </Button>
               </TooltipTrigger>
               {!fmpApiKey && <TooltipContent>Set your FMP API key in Settings</TooltipContent>}
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleReEnrich}
-                  disabled={!fmpApiKey || reEnriching || nullCapCount === 0}
-                >
+                <Button variant="outline" size="sm" onClick={handleReEnrich} disabled={!fmpApiKey || reEnriching || nullCapCount === 0}>
                   <DatabaseZap className={`mr-1 h-4 w-4 ${reEnriching ? "animate-spin" : ""}`} />
                   Re-enrich
-                  {nullCapCount > 0 && (
-                    <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">
-                      {nullCapCount}
-                    </Badge>
-                  )}
+                  {nullCapCount > 0 && <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">{nullCapCount}</Badge>}
                 </Button>
               </TooltipTrigger>
               {!fmpApiKey && <TooltipContent>Set your FMP API key in Settings</TooltipContent>}
             </Tooltip>
           </TooltipProvider>
-          <Button variant="outline" size="sm" onClick={() => setTagsOpen(true)}>
-            <Settings className="mr-1 h-4 w-4" />
-            Manage Tags
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setGroupsOpen(true)}>
-            <FolderOpen className="mr-1 h-4 w-4" />
-            Manage Groups
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setBulkOpen(true)}>
-            <Upload className="mr-1 h-4 w-4" />
-            Bulk Import
-          </Button>
-          <Button size="sm" onClick={() => { setAddPrefill(undefined); setAddOpen(true); }}>
-            <Plus className="mr-1 h-4 w-4" />
-            Add to Watchlist
-          </Button>
+          <Button variant="outline" size="sm" onClick={() => setTagsOpen(true)}><Settings className="mr-1 h-4 w-4" />Manage Tags</Button>
+          <Button variant="outline" size="sm" onClick={() => setGroupsOpen(true)}><FolderOpen className="mr-1 h-4 w-4" />Manage Groups</Button>
+          <Button variant="outline" size="sm" onClick={() => setBulkOpen(true)}><Upload className="mr-1 h-4 w-4" />Bulk Import</Button>
+          <Button size="sm" onClick={() => { setAddPrefill(undefined); setAddOpen(true); }}><Plus className="mr-1 h-4 w-4" />Add to Watchlist</Button>
         </div>
       </div>
 
-      <AddToWatchlistModal
-        open={addOpen}
-        onOpenChange={setAddOpen}
-        tags={tags}
-        fmpApiKey={fmpApiKey}
-        initialSymbol={addPrefill}
+      {/* Modals */}
+      <AddToWatchlistModal open={addOpen} onOpenChange={setAddOpen} tags={tags} fmpApiKey={fmpApiKey} initialSymbol={addPrefill}
         onSave={async (data, alert) => {
           const entryId = await addEntry(data);
           if (entryId && alert) {
-            await createAlert({
-              watchlist_entry_id: entryId,
-              symbol: data.symbol.toUpperCase(),
-              alert_type: alert.alert_type,
-              target_value: alert.target_value,
-              reference_price: alert.reference_price,
-              notify_time: alert.notify_time,
-            });
+            await createAlert({ watchlist_entry_id: entryId, symbol: data.symbol.toUpperCase(), alert_type: alert.alert_type, target_value: alert.target_value, reference_price: alert.reference_price, notify_time: alert.notify_time });
           }
         }}
       />
       <ManageTagsModal open={tagsOpen} onOpenChange={setTagsOpen} tags={tags} onCreate={createTag} onUpdate={updateTag} onDelete={deleteTag} />
       <ManageGroupsModal open={groupsOpen} onOpenChange={setGroupsOpen} groups={groups} onCreate={createGroup} onUpdate={updateGroup} onDelete={deleteGroup} />
-      <BulkWatchlistImportModal
-        open={bulkOpen}
-        onOpenChange={setBulkOpen}
-        existingSymbols={new Set(entries.map((e) => e.symbol.toUpperCase()))}
-        userId={user?.id ?? ""}
-        onImportComplete={refetchWatchlist}
-        fmpApiKey={fmpApiKey}
-      />
+      <BulkWatchlistImportModal open={bulkOpen} onOpenChange={setBulkOpen} existingSymbols={new Set(entries.map((e) => e.symbol.toUpperCase()))} userId={user?.id ?? ""} onImportComplete={refetchWatchlist} fmpApiKey={fmpApiKey} />
 
-      {/* Search + Filters */}
-      <WatchlistFilters
-        search={search}
-        onSearchChange={setSearch}
-        tagOptions={tagOptions}
-        capOptions={capOptions}
-        groupOptions={groupOptions}
-        sectorOptions={sectorOptions}
-        selectedTags={selectedTags}
-        selectedCaps={selectedCaps}
-        selectedGroups={selectedGroups}
-        selectedSectors={selectedSectors}
-        onToggleTag={(v) => toggleSet(setSelectedTags, v)}
-        onToggleCap={(v) => toggleSet(setSelectedCaps, v)}
-        onToggleGroup={(v) => toggleSet(setSelectedGroups, v)}
-        onToggleSector={(v) => toggleSet(setSelectedSectors, v)}
-        perfFilter={perfFilter}
-        onPerfFilterChange={setPerfFilter}
-        screenedFilter={screenedFilter}
-        onScreenedFilterChange={setScreenedFilter}
-        hasScreenHits={Object.keys(screenHitsMap).length > 0}
-        showArchived={showArchived}
-        onShowArchivedChange={setShowArchived}
-        activeFilters={activeFilters}
-        onClearFilters={clearFilters}
+      {/* Filters */}
+      <WatchlistFilters search={search} onSearchChange={setSearch} tagOptions={tagOptions} capOptions={capOptions} groupOptions={groupOptions} sectorOptions={sectorOptions}
+        selectedTags={selectedTags} selectedCaps={selectedCaps} selectedGroups={selectedGroups} selectedSectors={selectedSectors}
+        onToggleTag={(v) => toggleSet(setSelectedTags, v)} onToggleCap={(v) => toggleSet(setSelectedCaps, v)} onToggleGroup={(v) => toggleSet(setSelectedGroups, v)} onToggleSector={(v) => toggleSet(setSelectedSectors, v)}
+        perfFilter={perfFilter} onPerfFilterChange={setPerfFilter} screenedFilter={screenedFilter} onScreenedFilterChange={setScreenedFilter}
+        hasScreenHits={Object.keys(screenHitsMap).length > 0} showArchived={showArchived} onShowArchivedChange={setShowArchived} activeFilters={activeFilters} onClearFilters={clearFilters}
       />
 
       {entries.length === 0 ? (
@@ -550,361 +386,49 @@ export default function Watchlist() {
             <Eye className="mb-4 h-10 w-10 text-muted-foreground" />
             <p className="text-lg font-medium">Your watchlist is empty</p>
             <p className="text-sm text-muted-foreground mb-4">Track symbols you're interested in but don't own yet.</p>
-            <Button onClick={() => { setAddPrefill(undefined); setAddOpen(true); }}>
-              <Plus className="mr-1 h-4 w-4" />
-              Add Your First Stock
-            </Button>
+            <Button onClick={() => { setAddPrefill(undefined); setAddOpen(true); }}><Plus className="mr-1 h-4 w-4" />Add Your First Stock</Button>
           </CardContent>
         </Card>
       ) : (
         <>
-        {/* Group tabs */}
-        <WatchlistGroupTabs
-          sortedGroups={sortedGroups}
-          groupTab={groupTab}
-          onSelect={setGroupTab}
-        />
-        <Card>
-          {/* Floating bulk action bar */}
-          <WatchlistBulkActions
-            selectedIds={selectedIds}
-            entries={entries}
-            sortedGroups={sortedGroups}
-            onArchive={archiveEntries}
-            onUnarchive={unarchiveEntries}
-            onAssignGroup={assignEntriesToGroup}
-            onDeleteClick={() => setBulkDeleteOpen(true)}
-            onClearSelection={() => setSelectedIds(new Set())}
-          />
-          <div className="overflow-x-auto">
-            <Table className="table-fixed">
-              <colgroup>
-                <col className="w-[3%]" />
-                <col className="w-[7%]" />
-                <col className="w-[16%]" />
-                <col className="w-[9%]" />
-                <col className="w-[9%]" />
-                <col className="w-[10%]" />
-                <col className="w-[8%]" />
-                <col className="w-[8%]" />
-                <col className="w-[10%]" />
-                <col className="w-[14%]" />
-                <col className="w-[6%]" />
-              </colgroup>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-8" onClick={(e) => e.stopPropagation()}>
-                    <Checkbox checked={allVisibleSelected} onCheckedChange={toggleSelectAll} />
-                  </TableHead>
-                  <SortHeader label="Symbol" sortKey="symbol" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="whitespace-nowrap" />
-                  <TableHead>Company</TableHead>
-                  <SortHeader label="Price" sortKey="price" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="text-right whitespace-nowrap" />
-                  <SortHeader label="Day %" sortKey="dayChg" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="text-right whitespace-nowrap" />
-                  <SortHeader label="Since Add %" sortKey="sinceAdded" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="text-right whitespace-nowrap" />
-                  <SortHeader label="Mkt Cap" sortKey="marketCap" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="text-center whitespace-nowrap" />
-                  <TableHead>Group</TableHead>
-                  <TableHead>Tags</TableHead>
-                  <SortHeader label="Screens" sortKey="heat" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} className="whitespace-nowrap" />
-                  <TableHead></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {processed.map((entry) => {
-                  const dayChg = calcDayChg(entry);
-                  const sinceAdded = calcSinceAdded(entry);
-                  const isExpanded = expandedId === entry.id;
-                  const entryTags = entry.tags ?? [];
-                  const availableTags = tags.filter((t) => t.is_active && !entryTags.some((et) => et.id === t.id));
-                  const entryAlerts = getAlertsForEntry(entry.id);
-                  const hasActiveAlert = entryAlerts.some((a) => a.is_active);
-                  const hasTriggeredUnacked = entryAlerts.some((a) => a.triggered_at != null && a.acknowledged_at == null);
-                  const screenData = screenHitsMap[entry.symbol.toUpperCase()];
-                  const isArchived = !!entry.archived_at;
-
-                  return (
-                    <React.Fragment key={entry.id}>
-                      <TableRow
-                        className={`cursor-pointer ${isArchived ? "opacity-50" : ""}`}
-                        onClick={() => setExpandedId(isExpanded ? null : entry.id)}
-                      >
-                        <TableCell className="w-8" onClick={(e) => e.stopPropagation()}>
-                          <Checkbox
-                            checked={selectedIds.has(entry.id)}
-                            onCheckedChange={() => toggleSelectOne(entry.id)}
-                          />
-                        </TableCell>
-                        <TableCell className="font-medium whitespace-nowrap">
-                          <span className="inline-flex items-center gap-1.5">
-                            {entry.symbol}
-                            {isArchived && (
-                              <Badge variant="secondary" className="text-[10px] opacity-75">Archived</Badge>
-                            )}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground truncate overflow-hidden">{entry.company_name ?? "—"}</TableCell>
-                        <TableCell className="text-right tabular-nums whitespace-nowrap">{fmtPrice(entry.current_price)}</TableCell>
-                        <TableCell className={`text-right tabular-nums whitespace-nowrap ${pctColor(dayChg)}`}>
-                          {dayChg != null ? fmtPct(dayChg) : "—"}
-                        </TableCell>
-                        <TableCell className={`text-right tabular-nums whitespace-nowrap ${pctColor(sinceAdded)}`}>
-                          {sinceAdded != null ? fmtPct(sinceAdded) : "—"}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {entry.market_cap_category ? (
-                            <Badge variant="secondary" className={`text-xs ${CAP_COLORS[entry.market_cap_category] ?? ""}`}>
-                              {entry.market_cap_category}
-                            </Badge>
-                          ) : "—"}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground text-sm truncate">
-                          {groups.find(g => g.id === entry.group_id)?.name ?? "—"}
-                        </TableCell>
-                        <TableCell onClick={(e) => e.stopPropagation()}>
-                          <div className="flex flex-wrap items-center gap-1">
-                            {entryTags.map((tag) => (
-                              <span
-                                key={tag.id}
-                                className="inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-medium border group/tag"
-                                style={{
-                                  backgroundColor: tag.color ? `${tag.color}20` : undefined,
-                                  color: tag.color ?? undefined,
-                                  borderColor: tag.color ? `${tag.color}40` : undefined,
-                                }}
-                              >
-                                {tag.short_code}
-                                <button
-                                  onClick={() => removeEntryTag(entry.id, tag.id)}
-                                  className="opacity-0 group-hover/tag:opacity-100 hover:opacity-70 transition-opacity -mr-0.5"
-                                >
-                                  <X className="h-2.5 w-2.5" />
-                                </button>
-                              </span>
-                            ))}
-                            {availableTags.length > 0 && (
-                              <Popover>
-                                <PopoverTrigger asChild>
-                                  <button className="inline-flex items-center justify-center rounded-full border border-dashed border-border h-5 w-5 text-muted-foreground hover:border-foreground hover:text-foreground transition-colors">
-                                    <Plus className="h-3 w-3" />
-                                  </button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-48 p-1" align="start">
-                                  {availableTags.map((t) => (
-                                    <button
-                                      key={t.id}
-                                      className="flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent text-left"
-                                      onClick={() => addEntryTag(entry.id, t.id)}
-                                    >
-                                      <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: t.color ?? undefined }} />
-                                      {t.short_code}
-                                      {t.full_name && <span className="text-muted-foreground text-xs">– {t.full_name}</span>}
-                                    </button>
-                                  ))}
-                                </PopoverContent>
-                              </Popover>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {screenData ? (
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              {screenData.screens.map((s, i) => (
-                                <span
-                                  key={i}
-                                  className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium border"
-                                  style={{
-                                    backgroundColor: s.color ? `${s.color}20` : undefined,
-                                    color: s.color ?? undefined,
-                                    borderColor: s.color ? `${s.color}40` : undefined,
-                                  }}
-                                >
-                                  {s.short_code}
-                                </span>
-                              ))}
-                              {screenData.heat_score >= 2 && (
-                                <span className="text-[10px] text-muted-foreground" title={`Heat score: ${screenData.heat_score}`}>
-                                  {"🔥".repeat(Math.min(screenData.heat_score, 5))}
-                                </span>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground/30 text-xs">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {hasTriggeredUnacked ? (
-                            <BellRing className="h-4 w-4 text-amber-500 fill-amber-500" />
-                          ) : hasActiveAlert ? (
-                            <BellRing className="h-4 w-4 text-amber-500" />
-                          ) : (
-                            <Bell className="h-4 w-4 text-muted-foreground/30" />
-                          )}
-                        </TableCell>
-                      </TableRow>
-
-                      {/* Expanded row */}
-                      {isExpanded && (
-                        <TableRow className="bg-muted/30 hover:bg-muted/30">
-                          <TableCell colSpan={11} className="p-0">
-                            <WatchlistEntryDetail
-                              entry={entry}
-                              entryTags={entryTags}
-                              availableTags={availableTags}
-                              entryAlerts={entryAlerts}
-                              sortedGroups={sortedGroups}
-                              editingNotes={editingNotes}
-                              onEditNotes={(id, val) => setEditingNotes((prev) => ({ ...prev, [id]: val }))}
-                              onNotesBlur={handleNotesBlur}
-                              onAddTag={addEntryTag}
-                              onRemoveTag={removeEntryTag}
-                              onDeleteAlertConfirm={setDeleteAlertConfirm}
-                              onAssignGroup={assignEntriesToGroup}
-                              onUnarchive={unarchiveEntries}
-                              onDeleteConfirm={setDeleteConfirm}
-                              isArchived={isArchived}
-                              AlertPopoverComponent={AlertPopover}
-                              createAlert={createAlert}
-                            />
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </React.Fragment>
-                  );
-                })}
-                {processed.length === 0 && entries.length > 0 && (
-                  <TableRow>
-                    <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
-                      No results matching your filters
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </Card>
+          <WatchlistGroupTabs sortedGroups={sortedGroups} groupTab={groupTab} onSelect={setGroupTab} />
+          <Card>
+            <WatchlistBulkActions selectedIds={selectedIds} entries={entries} sortedGroups={sortedGroups}
+              onArchive={archiveEntries} onUnarchive={unarchiveEntries} onAssignGroup={assignEntriesToGroup}
+              onDeleteClick={() => setBulkDeleteOpen(true)} onClearSelection={() => setSelectedIds(new Set())}
+            />
+            <WatchlistTable
+              processed={processed} sortKey={sortKey} sortDir={sortDir} onSort={handleSort}
+              expandedId={expandedId} onExpand={setExpandedId}
+              selectedIds={selectedIds} onToggleSelect={toggleSelectOne} allVisibleSelected={allVisibleSelected} onToggleSelectAll={toggleSelectAll}
+              groups={sortedGroups} tags={tags} screenHitsMap={screenHitsMap} getAlertsForEntry={getAlertsForEntry}
+              editingNotes={editingNotes} onEditNotes={(id, val) => setEditingNotes((prev) => ({ ...prev, [id]: val }))} onNotesBlur={handleNotesBlur}
+              onAddTag={addEntryTag} onRemoveTag={removeEntryTag}
+              onDeleteAlertConfirm={setDeleteAlertConfirm} onAssignGroup={assignEntriesToGroup} onUnarchive={unarchiveEntries} onDeleteConfirm={setDeleteConfirm}
+              createAlert={createAlert} AlertPopoverComponent={AlertPopover}
+            />
+          </Card>
         </>
       )}
 
       {/* Alerts Section */}
-      {(activeAlerts.length > 0 || triggeredAlerts.length > 0) && (
-        <div className="space-y-3">
-          <div
-            className="flex items-center justify-between cursor-pointer select-none"
-            onClick={() => setAlertsOpen((o) => !o)}
-          >
-            <h2 className="text-lg font-semibold flex items-center gap-2">
-              <BellRing className="h-5 w-5" />
-              Price Alerts
-              <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${alertsOpen ? "rotate-180" : ""}`} />
-            </h2>
-          </div>
-          {alertsOpen && (
-          <Tabs value={alertTab} onValueChange={setAlertTab}>
-            <TabsList>
-              <TabsTrigger value="watchlist">Watchlist</TabsTrigger>
-              <TabsTrigger value="active">Active ({activeAlerts.length})</TabsTrigger>
-              <TabsTrigger value="triggered">Triggered ({triggeredAlerts.length})</TabsTrigger>
-            </TabsList>
-            <TabsContent value="active">
-              {activeAlerts.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-4">No active alerts.</p>
-              ) : (
-                <Card>
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Symbol</TableHead>
-                          <TableHead>Alert Type</TableHead>
-                          <TableHead>Target</TableHead>
-                          <TableHead>Reference</TableHead>
-                          <TableHead className="w-10"></TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {activeAlerts.map((a) => (
-                          <TableRow key={a.id}>
-                            <TableCell className="font-medium">{a.symbol}</TableCell>
-                            <TableCell className="text-sm">{a.alert_type.replace(/_/g, " ")}</TableCell>
-                            <TableCell className="text-sm">
-                              {a.alert_type.startsWith("PCT") ? `${a.target_value}%` : `$${a.target_value}`}
-                            </TableCell>
-                            <TableCell className="text-sm text-muted-foreground">
-                              {a.reference_price ? `$${a.reference_price}` : "—"}
-                            </TableCell>
-                            <TableCell>
-                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setDeleteAlertConfirm(a.id)}>
-                                <X className="h-3 w-3" />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </Card>
-              )}
-            </TabsContent>
-            <TabsContent value="triggered">
-              {triggeredAlerts.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-4">No triggered alerts yet.</p>
-              ) : (
-                <Card>
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Symbol</TableHead>
-                          <TableHead>Alert Type</TableHead>
-                          <TableHead>Target</TableHead>
-                          <TableHead>Triggered At</TableHead>
-                          <TableHead>Notified</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {triggeredAlerts.map((a) => (
-                          <TableRow key={a.id}>
-                            <TableCell className="font-medium">{a.symbol}</TableCell>
-                            <TableCell className="text-sm">{a.alert_type.replace(/_/g, " ")}</TableCell>
-                            <TableCell className="text-sm">
-                              {a.alert_type.startsWith("PCT") ? `${a.target_value}%` : `$${a.target_value}`}
-                            </TableCell>
-                            <TableCell className="text-sm">
-                              {a.triggered_at ? new Date(a.triggered_at).toLocaleString() : "—"}
-                            </TableCell>
-                            <TableCell>
-                              {a.notification_sent ? (
-                                <span className="text-emerald-600 dark:text-emerald-400 text-sm">✓</span>
-                              ) : (
-                                <span className="text-muted-foreground text-sm">—</span>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </Card>
-              )}
-            </TabsContent>
-          </Tabs>
-          )}
-        </div>
-      )}
+      <WatchlistAlertsSection
+        activeAlerts={activeAlerts} triggeredAlerts={triggeredAlerts}
+        alertsOpen={alertsOpen} onToggleAlerts={() => setAlertsOpen((o) => !o)}
+        alertTab={alertTab} onAlertTabChange={setAlertTab}
+        onDeleteAlertConfirm={setDeleteAlertConfirm}
+      />
 
-      {/* Delete watchlist entry confirmation */}
+      {/* Delete entry confirmation */}
       <AlertDialog open={!!deleteConfirm} onOpenChange={(o) => !o && setDeleteConfirm(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Remove {deleteConfirm?.symbol} from watchlist?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will remove the entry and all its tag associations. Any future alerts for this symbol will also be removed. This action cannot be undone.
-            </AlertDialogDescription>
+            <AlertDialogDescription>This will remove the entry and all its tag associations. Any future alerts for this symbol will also be removed. This action cannot be undone.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteConfirm} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              Remove
-            </AlertDialogAction>
+            <AlertDialogAction onClick={handleDeleteConfirm} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Remove</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -914,21 +438,12 @@ export default function Watchlist() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this alert?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently remove this price alert. This action cannot be undone.
-            </AlertDialogDescription>
+            <AlertDialogDescription>This will permanently remove this price alert. This action cannot be undone.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => {
-                if (deleteAlertConfirm) deleteAlert(deleteAlertConfirm);
-                setDeleteAlertConfirm(null);
-              }}
-            >
-              Delete
-            </AlertDialogAction>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => { if (deleteAlertConfirm) deleteAlert(deleteAlertConfirm); setDeleteAlertConfirm(null); }}>Delete</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -941,110 +456,19 @@ export default function Watchlist() {
             <AlertDialogDescription>
               {(() => {
                 const syms = selectedSymbols;
-                if (syms.length <= 6) {
-                  return `${syms.join(", ")} will be permanently removed along with their tags and price alerts.`;
-                }
+                if (syms.length <= 6) return `${syms.join(", ")} will be permanently removed along with their tags and price alerts.`;
                 return `${syms.slice(0, 6).join(", ")} and ${syms.length - 6} others will be permanently removed along with their tags and price alerts.`;
               })()}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={bulkDeleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={handleBulkDelete}
-              disabled={bulkDeleting}
-            >
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={handleBulkDelete} disabled={bulkDeleting}>
               {bulkDeleting ? "Deleting..." : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>
-  );
-}
-
-/* ── Alert Popover for expanded rows ── */
-const ALERT_TYPE_LABELS: Record<AlertType, string> = {
-  PRICE_ABOVE: "Price Above",
-  PRICE_BELOW: "Price Below",
-  PCT_CHANGE_UP: "% Up",
-  PCT_CHANGE_DOWN: "% Down",
-};
-
-function AlertPopover({
-  entryId,
-  symbol,
-  currentPrice,
-  createAlert,
-}: {
-  entryId: string;
-  symbol: string;
-  currentPrice: number | null;
-  createAlert: (data: {
-    watchlist_entry_id: string;
-    symbol: string;
-    alert_type: AlertType;
-    target_value: number;
-    reference_price?: number;
-    notify_time?: string;
-  }) => Promise<void>;
-}) {
-  const [alertType, setAlertType] = useState<AlertType>("PRICE_ABOVE");
-  const [value, setValue] = useState("");
-  const [notifyTime, setNotifyTime] = useState("");
-  const [open, setOpen] = useState(false);
-
-  const isPct = alertType === "PCT_CHANGE_UP" || alertType === "PCT_CHANGE_DOWN";
-
-  const handleAdd = async () => {
-    if (!value) return;
-    await createAlert({
-      watchlist_entry_id: entryId,
-      symbol,
-      alert_type: alertType,
-      target_value: parseFloat(value),
-      reference_price: isPct && currentPrice ? currentPrice : undefined,
-      notify_time: notifyTime || undefined,
-    });
-    setValue("");
-    setNotifyTime("");
-    setOpen(false);
-  };
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="h-7 text-xs gap-1">
-          <Bell className="h-3 w-3" />
-          Add Alert
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-64 p-3 space-y-3" align="start">
-        <div className="space-y-1">
-          <Label className="text-xs">Alert Type</Label>
-          <Select value={alertType} onValueChange={(v) => setAlertType(v as AlertType)}>
-            <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {(Object.keys(ALERT_TYPE_LABELS) as AlertType[]).map((t) => (
-                <SelectItem key={t} value={t} className="text-xs">{ALERT_TYPE_LABELS[t]}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">{isPct ? "Threshold (%)" : "Target Price ($)"}</Label>
-          <Input type="number" step={isPct ? "1" : "0.01"} value={value} onChange={(e) => setValue(e.target.value)} className="h-7 text-xs" placeholder={isPct ? "10" : "200.00"} />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Notify Time (ET)</Label>
-          <Input type="time" value={notifyTime} onChange={(e) => setNotifyTime(e.target.value)} className="h-7 text-xs w-28" />
-          <p className="text-[10px] text-muted-foreground">Blank = use default</p>
-        </div>
-        <Button size="sm" className="w-full h-7 text-xs" onClick={handleAdd} disabled={!value}>
-          Set Alert
-        </Button>
-      </PopoverContent>
-    </Popover>
   );
 }
