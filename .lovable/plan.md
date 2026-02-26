@@ -1,82 +1,38 @@
 
 
-## Redesign Portfolio Import -- Preview Before Commit with Position Removal
+## Clarify the "Progress" Percentage on Category Cards
 
-### Overview
-Restructure the import flow from "upload then confirm then see summary" to "upload then preview all changes then confirm." The post-import summary screen is removed entirely. Positions missing from the CSV will now be flagged for deletion and removed on confirm.
+**Problem:** The "Current" row displays something like `$72,903 (82.33%)` -- the percentage represents how far along the category is toward its target allocation, but it reads as if it's a portfolio share (which would conflict with the target of 50%).
 
----
+**Solution:** Replace the single ambiguous percentage with two clearer data points:
 
-### Flow Changes
+### Proposed Card Layout
 
-**Current flow:** Upload → Click "Update Portfolio" (writes to DB immediately) → See post-import summary → Click "Done"
+```text
+Current     $72,903 — 41.17% of portfolio
+Target      $75,857 — 50.00% of portfolio  [pencil]
+Progress    82.33% of target
+Delta       ▼ $2,954 under
+Positions   6 / 10
+```
 
-**New flow:** Upload → See full change preview (nothing written yet) → Click "Confirm Import" (writes to DB + deletes removed positions) → Modal closes with success toast
+### Changes
 
----
+**Row 1 -- "Current":** Show the dollar value and the category's *actual portfolio share* (i.e., `c.value / totalEquity * 100`). Label it clearly: `$72,903 -- 41.17% of portfolio`.
 
-### Implementation Details (single file: `src/components/UpdatePortfolioModal.tsx`)
+**Row 2 -- "Target":** Already shows the target percentage; append "of portfolio" for consistency.
 
-**1. Change the phase model**
+**Row 3 -- New "Progress" row:** Add a dedicated row showing the progress percentage (`currentValue / targetValue * 100`), labeled "Progress" on the left and `82.33% of target` on the right. This isolates the "how far along" metric from the portfolio share.
 
-Replace `"upload" | "summary"` with `"upload" | "preview"`. Remove the `SummaryView` component entirely.
+Alternatively, if an extra row feels too crowded, the progress percentage could be shown as a small progress bar under the card header, making it instantly visual rather than numerical.
 
-**2. Expand `ChangeSummary` to include removals**
+### Technical Details
 
-Add a `removedPositions` array containing positions in the database but NOT in the CSV (and not CASH). Each entry stores symbol, current value, and position ID (needed for deletion).
+- In `src/pages/Portfolio.tsx`, around lines 1087-1155 (the card rendering block):
+  - Compute `progressPct = c.target > 0 ? (c.pct / c.target) * 100 : 0`
+  - Update the "Current" row to show `{fmt(c.value)} -- {fmtPct(c.pct)} of portfolio`
+  - Update the "Target" row similarly
+  - Insert a new "Progress" row between Target and Delta showing `{fmtPct(progressPct)} of target`
+  - Optionally add a thin `<Progress>` bar (already available in `ui/progress.tsx`) below the header for a quick visual read
 
-Add `oldTotal` and `newTotal` fields for showing portfolio value change.
-
-**3. Move DB fetch to BEFORE commit (the preview step)**
-
-When the user clicks a new "Preview Changes" button (replaces the current "Update Portfolio" button):
-- Fetch existing positions and portfolio summary from the database
-- Build the full `ChangeSummary` including removals, new, updated, unchanged, cash diff, and total value diff
-- Switch to the `"preview"` phase
-- Nothing is written to the database yet
-
-**4. Build the preview UI**
-
-The preview phase displays four sections in order:
-
-1. **Positions to Remove** (red/destructive styling): Header shows "Removing X positions". Table lists symbol and current value for each. Only shown if there are removals.
-
-2. **New Positions** (green/emerald styling): Same table as current summary view -- symbol, value, accounts.
-
-3. **Updated Positions** (amber styling): Same diff table as current summary -- symbol with field-by-field old (strikethrough) to new changes.
-
-4. **Unchanged Positions** (muted text): Just a count line, same as current.
-
-5. **Cash Balance**: Old to new with diff badge (same styling as current summary).
-
-6. **Total Portfolio Value**: Old total to new total with dollar and percentage change badge.
-
-Two buttons at the bottom:
-- "Cancel" (outline) -- closes modal, nothing saved
-- "Confirm Import" (primary) -- executes all DB operations
-
-**5. Confirm Import logic**
-
-When "Confirm Import" is clicked:
-- Delete positions flagged for removal (by their IDs) -- cascade handles `position_tags`
-- Upsert all CSV positions (same as current)
-- Upsert CASH position row (same as current)
-- Upsert portfolio summary (same as current)
-- Log to import history (same as current)
-- Show success toast: "Portfolio updated: X added, Y updated, Z removed"
-- Call `onSuccess()` and close the modal immediately (no summary phase)
-
-**6. CASH exclusion from removal logic**
-
-When computing removed positions, filter out any existing position with symbol "CASH" -- it is handled separately via the cash balance upsert.
-
-**7. Preserved fields on update**
-
-The upsert continues to only set: `shares`, `current_price`, `current_value`, `cost_basis`, `company_name`, `account`. Fields like `category`, `tier`, `notes`, `removed_tag_ids` are untouched.
-
----
-
-### No database changes needed
-
-The deletion uses the existing `positions` table DELETE RLS policy (already allows users to delete their own). The `position_tags` cascade handles tag cleanup automatically. No new migrations required.
-
+- No database or backend changes required -- purely a display change.
