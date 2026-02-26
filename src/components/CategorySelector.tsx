@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { usePortfolioSettings, getPerPositionTarget, getCategoryPerPositionTarget, type CategoryConfig } from "@/hooks/use-portfolio-settings";
-import { Check, Settings, Info, AlertTriangle } from "lucide-react";
+import { Check, Settings, Info } from "lucide-react";
 
 type Category = string | null;
 type Tier = string | null;
@@ -92,13 +92,9 @@ export function CategorySelector({ positionId, category, tier, onUpdate, onTierS
     return settings.categories.find((c) => c.key === category) ?? null;
   })();
 
-  // Orphan detection: category is set but doesn't match any settings category
-  const isOrphan = !!(category && !currentTierConfig && !currentCatOnly);
-
   const currentLabel = (() => {
     if (currentTierConfig) return `${currentTierConfig.cat.display_name} · ${currentTierConfig.tier.name}`;
     if (currentCatOnly) return currentCatOnly.display_name;
-    if (isOrphan) return `${category} (removed)`;
     return null;
   })();
 
@@ -171,7 +167,7 @@ export function CategorySelector({ positionId, category, tier, onUpdate, onTierS
                   style={{ backgroundColor: catColor }}
                 />
               )}
-              {isOrphan && <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" />}
+              
               {currentLabel}
             </span>
           )}

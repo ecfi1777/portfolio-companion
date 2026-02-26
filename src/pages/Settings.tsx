@@ -76,6 +76,21 @@ export default function Settings() {
         }
         setTierError(null);
         next = { ...settings, categories: draft.categories };
+
+        // Auto-unassign positions whose category was deleted
+        const oldKeys = new Set(settings.categories.map((c) => c.key));
+        const newKeys = new Set(draft.categories.map((c) => c.key));
+        const deletedKeys = [...oldKeys].filter((k) => !newKeys.has(k));
+        if (deletedKeys.length > 0) {
+          const { error: unassignErr } = await supabase
+            .from("positions")
+            .update({ category: null, tier: null })
+            .in("category", deletedKeys);
+          if (unassignErr) {
+            console.error("Failed to unassign positions for deleted categories:", unassignErr);
+          }
+        }
+
         break;
       case "api":
         next = { ...settings, fmp_api_key: draft.fmp_api_key };
