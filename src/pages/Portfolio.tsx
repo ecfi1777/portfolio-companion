@@ -1084,13 +1084,13 @@ export default function Portfolio() {
                       <p className="text-sm font-semibold" style={{ color: CATEGORY_COLORS[c.key]?.text ?? "inherit" }}>{c.name}</p>
                     </div>
 
-                    <div className="mt-3 space-y-2">
-                      <div className="flex items-center justify-between text-xs">
+                    <div className="mt-3 divide-y divide-border/40">
+                      <div className="flex items-center justify-between py-1.5 text-xs">
                         <span className="text-muted-foreground">Current</span>
                         <span className="font-medium text-foreground">{fmt(c.value)} ({fmtPct(c.pct)})</span>
                       </div>
 
-                      <div className="group/target flex items-center justify-between text-xs">
+                      <div className="group/target flex items-center justify-between py-1.5 text-xs">
                         <span className="text-muted-foreground">Target</span>
                         {c.isUnassigned ? (
                           <span className="font-medium text-muted-foreground">—</span>
@@ -1128,7 +1128,7 @@ export default function Portfolio() {
                         )}
                       </div>
 
-                      <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center justify-between py-1.5 text-xs">
                         <span className="text-muted-foreground">Delta</span>
                         {c.isUnassigned ? (
                           <span className="text-muted-foreground">No target</span>
@@ -1141,7 +1141,7 @@ export default function Portfolio() {
                         )}
                       </div>
 
-                      <div className="flex items-center justify-between border-t border-border/60 pt-2 text-xs">
+                      <div className="flex items-center justify-between py-1.5 text-xs">
                         <span className="text-muted-foreground">Positions</span>
                         {c.isUnassigned ? (
                           <span className="font-medium text-foreground">{c.count} unassigned</span>
