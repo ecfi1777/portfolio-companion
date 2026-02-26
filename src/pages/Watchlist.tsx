@@ -23,13 +23,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Eye, EyeOff, Plus, Settings, Search, Bell, BellRing, ChevronDown, ChevronUp, ArrowUpDown, Trash2, X, Tag as TagIcon, RefreshCw, AlertTriangle, Clock, Flame, Upload, DatabaseZap, Archive,
+  Eye, EyeOff, Plus, Settings, Search, Bell, BellRing, ChevronDown, ChevronUp, ArrowUpDown, Trash2, X, Tag as TagIcon, RefreshCw, AlertTriangle, Clock, Flame, Upload, DatabaseZap, Archive, FolderOpen, Folder,
 } from "lucide-react";
-import { useWatchlist, type WatchlistEntry } from "@/hooks/use-watchlist";
+import { useWatchlist, type WatchlistEntry, type WatchlistGroup } from "@/hooks/use-watchlist";
 import { usePortfolioSettings } from "@/hooks/use-portfolio-settings";
 import { useAlerts, type AlertType, type PriceAlert } from "@/hooks/use-alerts";
 import { AddToWatchlistModal, type AddToWatchlistData, type PendingAlertData } from "@/components/AddToWatchlistModal";
 import { ManageTagsModal } from "@/components/ManageTagsModal";
+import { ManageGroupsModal } from "@/components/ManageGroupsModal";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatMarketCap } from "@/lib/market-cap";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -177,8 +178,9 @@ function SortHeader({
 export default function Watchlist() {
   const { user } = useAuth();
   const {
-    entries, tags, loading, addEntry, deleteEntry, updateEntryNotes,
-    addEntryTag, removeEntryTag, createTag, updateTag, deleteTag, refreshPrices, archiveEntries, unarchiveEntries, refetch: refetchWatchlist,
+    entries, tags, groups, loading, addEntry, deleteEntry, updateEntryNotes,
+    addEntryTag, removeEntryTag, createTag, updateTag, deleteTag, refreshPrices, archiveEntries, unarchiveEntries,
+    createGroup, updateGroup, deleteGroup, assignEntriesToGroup, refetch: refetchWatchlist,
   } = useWatchlist();
   const { settings } = usePortfolioSettings();
   const { activeAlerts, triggeredAlerts, createAlert, deleteAlert, getAlertsForEntry, refetch: refetchAlerts } = useAlerts();
@@ -210,6 +212,7 @@ export default function Watchlist() {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [addPrefill, setAddPrefill] = useState<string | undefined>(undefined);
   const [tagsOpen, setTagsOpen] = useState(false);
+  const [groupsOpen, setGroupsOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<WatchlistEntry | null>(null);
@@ -227,6 +230,8 @@ export default function Watchlist() {
   const [selectedSectors, setSelectedSectors] = useState<Set<string>>(new Set());
   const [perfFilter, setPerfFilter] = useState<PerfFilter>("all");
   const [showArchived, setShowArchived] = useState(false);
+  const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
+  const [groupTab, setGroupTab] = useState<string>("all");
 
   // Sorting
   const [sortKey, setSortKey] = useState<SortKey>("dateAdded");
@@ -268,6 +273,16 @@ export default function Watchlist() {
 
   const capOptions = CAP_ORDER.map((c) => ({ value: c, label: c }));
 
+  const groupOptions = useMemo(
+    () => [
+      { value: "__ungrouped__", label: "Ungrouped" },
+      ...groups.map((g) => ({ value: g.id, label: g.name, color: g.color })),
+    ],
+    [groups]
+  );
+
+  const sortedGroups = useMemo(() => [...groups].sort((a, b) => a.sort_order - b.sort_order), [groups]);
+
   // Filter + sort
   const processed = useMemo(() => {
     let result = entries;
@@ -281,6 +296,23 @@ export default function Watchlist() {
       result = result.filter(
         (e) => e.symbol.toLowerCase().includes(q) || (e.company_name?.toLowerCase().includes(q) ?? false)
       );
+    }
+
+    // Group tab filter
+    if (groupTab !== "all") {
+      if (groupTab === "__ungrouped__") {
+        result = result.filter((e) => !e.group_id);
+      } else {
+        result = result.filter((e) => e.group_id === groupTab);
+      }
+    }
+
+    // Group dropdown filter
+    if (selectedGroups.size > 0) {
+      result = result.filter((e) => {
+        if (selectedGroups.has("__ungrouped__") && !e.group_id) return true;
+        return e.group_id ? selectedGroups.has(e.group_id) : false;
+      });
     }
 
     if (selectedTags.size > 0) {
@@ -322,17 +354,19 @@ export default function Watchlist() {
     });
 
     return sorted;
-  }, [entries, search, selectedTags, selectedCaps, selectedSectors, perfFilter, screenedFilter, screenHitsMap, sortKey, sortDir, showArchived]);
+  }, [entries, search, selectedTags, selectedCaps, selectedSectors, perfFilter, screenedFilter, screenHitsMap, sortKey, sortDir, showArchived, groupTab, selectedGroups]);
 
-  const activeFilters = selectedTags.size + selectedCaps.size + selectedSectors.size + (perfFilter !== "all" ? 1 : 0) + (screenedFilter ? 1 : 0) + (showArchived ? 1 : 0);
+  const activeFilters = selectedTags.size + selectedCaps.size + selectedSectors.size + selectedGroups.size + (perfFilter !== "all" ? 1 : 0) + (screenedFilter ? 1 : 0) + (showArchived ? 1 : 0);
 
   const clearFilters = () => {
     setSelectedTags(new Set());
     setSelectedCaps(new Set());
     setSelectedSectors(new Set());
+    setSelectedGroups(new Set());
     setPerfFilter("all");
     setScreenedFilter(false);
     setShowArchived(false);
+    setGroupTab("all");
   };
 
   const handleNotesBlur = async (entryId: string) => {
@@ -553,6 +587,10 @@ export default function Watchlist() {
             <Settings className="mr-1 h-4 w-4" />
             Manage Tags
           </Button>
+          <Button variant="outline" size="sm" onClick={() => setGroupsOpen(true)}>
+            <FolderOpen className="mr-1 h-4 w-4" />
+            Manage Groups
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setBulkOpen(true)}>
             <Upload className="mr-1 h-4 w-4" />
             Bulk Import
@@ -585,6 +623,7 @@ export default function Watchlist() {
         }}
       />
       <ManageTagsModal open={tagsOpen} onOpenChange={setTagsOpen} tags={tags} onCreate={createTag} onUpdate={updateTag} onDelete={deleteTag} />
+      <ManageGroupsModal open={groupsOpen} onOpenChange={setGroupsOpen} groups={groups} onCreate={createGroup} onUpdate={updateGroup} onDelete={deleteGroup} />
       <BulkWatchlistImportModal
         open={bulkOpen}
         onOpenChange={setBulkOpen}
@@ -604,6 +643,7 @@ export default function Watchlist() {
         <FilterDropdown label="Tags" options={tagOptions} selected={selectedTags} onToggle={(v) => toggleSet(setSelectedTags, v)} />
         <FilterDropdown label="Mkt Cap" options={capOptions} selected={selectedCaps} onToggle={(v) => toggleSet(setSelectedCaps, v)} />
         <FilterDropdown label="Sector" options={sectorOptions} selected={selectedSectors} onToggle={(v) => toggleSet(setSelectedSectors, v)} />
+        <FilterDropdown label="Group" options={groupOptions} selected={selectedGroups} onToggle={(v) => toggleSet(setSelectedGroups, v)} />
 
         {/* Performance toggle */}
         <div className="flex items-center rounded-md border border-border h-8 text-xs">
@@ -660,6 +700,40 @@ export default function Watchlist() {
           </CardContent>
         </Card>
       ) : (
+        <>
+        {/* Group tabs */}
+        {sortedGroups.length > 0 && (
+          <div className="flex items-center gap-1 overflow-x-auto pb-1">
+            <button
+              onClick={() => setGroupTab("all")}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                groupTab === "all" ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-accent"
+              }`}
+            >
+              All
+            </button>
+            {sortedGroups.map((g) => (
+              <button
+                key={g.id}
+                onClick={() => setGroupTab(g.id)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                  groupTab === g.id ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-accent"
+                }`}
+              >
+                {g.color && <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: g.color }} />}
+                {g.name}
+              </button>
+            ))}
+            <button
+              onClick={() => setGroupTab("__ungrouped__")}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                groupTab === "__ungrouped__" ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-accent"
+              }`}
+            >
+              Ungrouped
+            </button>
+          </div>
+        )}
         <Card>
           {/* Floating bulk action bar */}
           {selectedIds.size > 0 && (() => {
@@ -690,6 +764,42 @@ export default function Watchlist() {
                     Archive Selected
                   </Button>
                 )}
+                {/* Move to Group dropdown */}
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm">
+                      <Folder className="mr-1 h-4 w-4" />
+                      Move to Group
+                      <ChevronDown className="ml-1 h-3 w-3" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-48 p-1" align="end">
+                    <button
+                      className="flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent text-left"
+                      onClick={async () => {
+                        await assignEntriesToGroup([...selectedIds], null);
+                        setSelectedIds(new Set());
+                        toast({ title: `Moved ${selectedIds.size} entries to Ungrouped` });
+                      }}
+                    >
+                      Ungrouped
+                    </button>
+                    {sortedGroups.map((g) => (
+                      <button
+                        key={g.id}
+                        className="flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent text-left"
+                        onClick={async () => {
+                          await assignEntriesToGroup([...selectedIds], g.id);
+                          setSelectedIds(new Set());
+                          toast({ title: `Moved ${selectedIds.size} entries to ${g.name}` });
+                        }}
+                      >
+                        <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: g.color ?? "#888" }} />
+                        {g.name}
+                      </button>
+                    ))}
+                  </PopoverContent>
+                </Popover>
                 <Button variant="destructive" size="sm" onClick={() => setBulkDeleteOpen(true)}>
                   <Trash2 className="mr-1 h-4 w-4" />
                   Delete Selected
@@ -754,10 +864,27 @@ export default function Watchlist() {
                           />
                         </TableCell>
                         <TableCell className="font-medium whitespace-nowrap">
-                          {entry.symbol}
-                          {isArchived && (
-                            <Badge variant="secondary" className="ml-1.5 text-[10px] opacity-75">Archived</Badge>
-                          )}
+                          <span className="inline-flex items-center gap-1.5">
+                            {entry.symbol}
+                            {(() => {
+                              const grp = groups.find((g) => g.id === entry.group_id);
+                              return grp ? (
+                                <span
+                                  className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-medium border"
+                                  style={{
+                                    backgroundColor: grp.color ? `${grp.color}20` : undefined,
+                                    color: grp.color ?? undefined,
+                                    borderColor: grp.color ? `${grp.color}40` : undefined,
+                                  }}
+                                >
+                                  {grp.name}
+                                </span>
+                              ) : null;
+                            })()}
+                            {isArchived && (
+                              <Badge variant="secondary" className="text-[10px] opacity-75">Archived</Badge>
+                            )}
+                          </span>
                         </TableCell>
                         <TableCell className="text-muted-foreground truncate overflow-hidden">{entry.company_name ?? "—"}</TableCell>
                         <TableCell className="text-right tabular-nums whitespace-nowrap">{fmtPrice(entry.current_price)}</TableCell>
@@ -917,6 +1044,30 @@ export default function Watchlist() {
                                   </div>
                                 </div>
 
+                                {/* Group section */}
+                                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider pt-2">Group</h4>
+                                <Select
+                                  value={entry.group_id ?? "__none__"}
+                                  onValueChange={async (v) => {
+                                    await assignEntriesToGroup([entry.id], v === "__none__" ? null : v);
+                                  }}
+                                >
+                                  <SelectTrigger className="h-7 text-xs w-full">
+                                    <SelectValue placeholder="Ungrouped" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="__none__" className="text-xs">Ungrouped</SelectItem>
+                                    {sortedGroups.map((g) => (
+                                      <SelectItem key={g.id} value={g.id} className="text-xs">
+                                        <span className="flex items-center gap-1.5">
+                                          <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: g.color ?? "#888" }} />
+                                          {g.name}
+                                        </span>
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+
                                 {/* Tags section */}
                                 <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider pt-2">Tags</h4>
                                 <div className="flex flex-wrap gap-1.5">
@@ -1051,6 +1202,7 @@ export default function Watchlist() {
             </Table>
           </div>
         </Card>
+        </>
       )}
 
       {/* Alerts Section */}

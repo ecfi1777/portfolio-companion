@@ -6,6 +6,15 @@ import { getMarketCapCategory } from "@/lib/market-cap";
 import { fetchProfilesBatched } from "@/lib/fmp-api";
 import { enrichWatchlistEntries } from "@/lib/watchlist-enrichment";
 
+export interface WatchlistGroup {
+  id: string;
+  user_id: string;
+  name: string;
+  color: string | null;
+  sort_order: number;
+  created_at: string;
+}
+
 export interface WatchlistEntry {
   id: string;
   user_id: string;
@@ -22,6 +31,7 @@ export interface WatchlistEntry {
   notes: string | null;
   last_price_update: string | null;
   archived_at: string | null;
+  group_id: string | null;
   created_at: string;
   updated_at: string;
   tags?: Tag[];
@@ -64,6 +74,7 @@ export function useWatchlist() {
   const [entries, setEntries] = useState<WatchlistEntry[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [entryTags, setEntryTags] = useState<EntryTag[]>([]);
+  const [groups, setGroups] = useState<WatchlistGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [seeding, setSeeding] = useState(false);
 
@@ -92,10 +103,11 @@ export function useWatchlist() {
     if (!user) return;
     setLoading(true);
 
-    const [entriesRes, tagsRes, etRes] = await Promise.all([
+    const [entriesRes, tagsRes, etRes, groupsRes] = await Promise.all([
       supabase.from("watchlist_entries").select("*").order("date_added", { ascending: false }),
       supabase.from("tags").select("*").order("short_code"),
       supabase.from("watchlist_entry_tags").select("*"),
+      supabase.from("watchlist_groups").select("*").order("sort_order"),
     ]);
 
     const fetchedTags = (tagsRes.data ?? []) as Tag[];
@@ -110,6 +122,7 @@ export function useWatchlist() {
 
     setEntries((entriesRes.data ?? []) as WatchlistEntry[]);
     setEntryTags((etRes.data ?? []) as EntryTag[]);
+    setGroups((groupsRes.data ?? []) as WatchlistGroup[]);
     setLoading(false);
   }, [user, seeding, seedDefaultTags]);
 
@@ -317,9 +330,43 @@ export function useWatchlist() {
     setEntries((prev) => prev.map((e) => ids.includes(e.id) ? { ...e, archived_at: null } : e));
   };
 
+  // Group CRUD
+  const createGroup = async (data: { name: string; color?: string }) => {
+    if (!user) return;
+    const maxOrder = groups.reduce((max, g) => Math.max(max, g.sort_order), -1);
+    const { error } = await supabase.from("watchlist_groups").insert({
+      user_id: user.id,
+      name: data.name.trim(),
+      color: data.color || null,
+      sort_order: maxOrder + 1,
+    } as any);
+    if (error) {
+      toast({ title: "Error", description: error.code === "23505" ? "Group name already exists." : error.message, variant: "destructive" });
+      return;
+    }
+    await fetchAll();
+  };
+
+  const updateGroup = async (id: string, data: { name?: string; color?: string; sort_order?: number }) => {
+    await supabase.from("watchlist_groups").update(data as any).eq("id", id);
+    await fetchAll();
+  };
+
+  const deleteGroup = async (id: string) => {
+    await supabase.from("watchlist_groups").delete().eq("id", id);
+    await fetchAll();
+  };
+
+  const assignEntriesToGroup = async (ids: string[], groupId: string | null) => {
+    if (!user || ids.length === 0) return;
+    await supabase.from("watchlist_entries").update({ group_id: groupId } as any).in("id", ids);
+    setEntries((prev) => prev.map((e) => ids.includes(e.id) ? { ...e, group_id: groupId } : e));
+  };
+
   return {
     entries: enrichedEntries,
     tags: tagsWithCounts,
+    groups,
     loading,
     addEntry,
     deleteEntry,
@@ -332,6 +379,10 @@ export function useWatchlist() {
     refreshPrices,
     archiveEntries,
     unarchiveEntries,
+    createGroup,
+    updateGroup,
+    deleteGroup,
+    assignEntriesToGroup,
     refetch: fetchAll,
   };
 }
