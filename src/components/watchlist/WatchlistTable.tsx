@@ -174,7 +174,7 @@ export function WatchlistTable({
                       </Badge>
                     ) : "—"}
                   </TableCell>
-                  <TableCell className="text-muted-foreground text-sm truncate">
+                  <TableCell className="text-muted-foreground text-sm truncate" title={groups.find(g => g.id === entry.group_id)?.name ?? undefined}>
                     {groups.find(g => g.id === entry.group_id)?.name ?? "—"}
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
