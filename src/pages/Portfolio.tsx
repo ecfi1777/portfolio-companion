@@ -1084,18 +1084,18 @@ export default function Portfolio() {
                       <p className="text-sm font-semibold" style={{ color: CATEGORY_COLORS[c.key]?.text ?? "inherit" }}>{c.name}</p>
                     </div>
 
-                    <div className="mt-3 divide-y divide-border/40">
+                    <div className="mt-3 divide-y divide-border">
                       <div className="flex items-center justify-between py-1.5 text-xs">
                         <span className="text-muted-foreground">Current</span>
-                        <span className="font-medium text-foreground">{fmt(c.value)} ({fmtPct(c.pct)})</span>
+                        <span className="font-medium text-foreground text-right tabular-nums">{fmt(c.value)} ({fmtPct(c.pct)})</span>
                       </div>
 
                       <div className="group/target flex items-center justify-between py-1.5 text-xs">
                         <span className="text-muted-foreground">Target</span>
                         {c.isUnassigned ? (
-                          <span className="font-medium text-muted-foreground">—</span>
+                          <span className="font-medium text-muted-foreground text-right">—</span>
                         ) : isEditingTarget ? (
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1 justify-end">
                             <Input
                               value={targetDraft}
                               onChange={(e) => setTargetDraft(e.target.value)}
@@ -1119,7 +1119,7 @@ export default function Portfolio() {
                         ) : (
                           <button
                             type="button"
-                            className="inline-flex items-center gap-1 font-medium text-foreground"
+                            className="inline-flex items-center gap-1 font-medium text-foreground text-right tabular-nums"
                             onClick={() => handleStartCategoryTargetEdit(c.key, c.target)}
                           >
                             <span>{fmt(targetValue)} ({fmtPct(c.target)})</span>
@@ -1130,6 +1130,7 @@ export default function Portfolio() {
 
                       <div className="flex items-center justify-between py-1.5 text-xs">
                         <span className="text-muted-foreground">Delta</span>
+                        <span className="text-right tabular-nums">
                         {c.isUnassigned ? (
                           <span className="text-muted-foreground">No target</span>
                         ) : isOnTarget ? (
@@ -1139,15 +1140,18 @@ export default function Portfolio() {
                         ) : (
                           <span className="text-amber-600 dark:text-amber-400">▲ {fmt(Math.abs(deltaDollar))} over</span>
                         )}
+                        </span>
                       </div>
 
                       <div className="flex items-center justify-between py-1.5 text-xs">
                         <span className="text-muted-foreground">Positions</span>
+                        <span className="font-medium text-foreground text-right tabular-nums">
                         {c.isUnassigned ? (
-                          <span className="font-medium text-foreground">{c.count} unassigned</span>
+                          <>{c.count} unassigned</>
                         ) : (
-                          <span className="font-medium text-foreground">{c.count} / {c.targetPositions} positions</span>
+                          <>{c.count} / {c.targetPositions} positions</>
                         )}
+                        </span>
                       </div>
                     </div>
                   </div>
