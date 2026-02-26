@@ -1,33 +1,67 @@
 
-## Add Group Column to Watchlist Table
 
-### Current column order
-Checkbox | Symbol | Company | Price | Day% | Since Add% | Mkt Cap | Tags | Screens | Alert
+## Further Split of Watchlist.tsx (1,050 -> ~350 lines)
 
-### New column order
-Checkbox | Symbol | Company | Price | Day% | Since Add% | Mkt Cap | **Group** | Tags | Screens | Alert
+Portfolio.tsx (566 lines) is already well-split from the previous refactor -- all UI rendering is delegated to sub-components. The remaining bulk is state, data fetching, and derived computations which belong in the parent. No further changes needed there.
 
-### Changes in `src/pages/Watchlist.tsx`
+Watchlist.tsx still has ~700 lines of inline rendering that can be extracted. Here's the plan:
 
-**1. Colgroup (lines 813-824):** Add a `col` for Group (~8% width), reduce Tags from 15% to 10% and Screens from 17% to 14% to make room:
+### 1. Create `src/components/watchlist/WatchlistTable.tsx` (~250 lines)
 
-| Column | Before | After |
-|--------|--------|-------|
-| Tags | 15% | 10% |
-| Screens | 17% | 14% |
-| Group | — | 8% (new) |
+Extract the entire table rendering block (lines 579-784):
+- The `<Table>` with `<colgroup>`, `<TableHeader>`, and `<TableBody>`
+- Each row's cells: checkbox, symbol, company, price, day%, since add%, mkt cap, group, tags (with inline tag add/remove popover), screens, alert icon
+- The expanded row rendering that delegates to `WatchlistEntryDetail`
+- The "No results" empty row
 
-**2. Table header (lines 825-839):** Add `<TableHead>Group</TableHead>` after the Mkt Cap header.
+Props:
+- `processed` (filtered/sorted entries array)
+- `sortKey`, `sortDir`, `onSort`
+- `expandedId`, `onExpand`
+- `selectedIds`, `onToggleSelect`, `allVisibleSelected`, `onToggleSelectAll`
+- `groups`, `tags`, `screenHitsMap`
+- `getAlertsForEntry`
+- `editingNotes`, `onEditNotes`, `onNotesBlur`
+- `onAddTag`, `onRemoveTag`
+- `onDeleteAlertConfirm`, `onAssignGroup`, `onUnarchive`, `onDeleteConfirm`
+- `createAlert`
+- `AlertPopoverComponent`
 
-**3. Table body -- Symbol cell (lines 869-883):** Remove the colored group badge from the Symbol cell entirely. Keep the Archived badge.
+### 2. Create `src/components/watchlist/AlertPopover.tsx` (~85 lines)
 
-**4. Table body -- new Group cell (after line 903):** Add a plain text cell:
-```
-<TableCell className="text-muted-foreground text-sm truncate">
-  {groups.find(g => g.id === entry.group_id)?.name ?? "—"}
-</TableCell>
-```
+Extract the `AlertPopover` function component (lines 967-1050) and the `ALERT_TYPE_LABELS` constant into its own file. It's already self-contained with its own local state.
 
-**5. Filter dropdown order (lines ~643-646):** Move the Group filter before Sector so the order is: Tags | Mkt Cap | Group | Sector.
+### 3. Create `src/components/watchlist/WatchlistAlertsSection.tsx` (~110 lines)
 
-Only `src/pages/Watchlist.tsx` is modified.
+Extract the collapsible "Price Alerts" section (lines 787-891):
+- The collapsible header with chevron toggle
+- The Tabs component with Active and Triggered tabs
+- The active alerts table and triggered alerts table
+
+Props:
+- `activeAlerts`, `triggeredAlerts`
+- `alertsOpen`, `onToggleAlerts`
+- `alertTab`, `onAlertTabChange`
+- `onDeleteAlertConfirm`
+
+### 4. Slim down `src/pages/Watchlist.tsx` to ~350 lines
+
+After extraction, Watchlist.tsx will contain:
+- Imports
+- Type definitions (ScreenHit, SymbolScreenData, etc.)
+- All useState/useCallback/useMemo hooks (state management stays in parent)
+- Data fetching (screen hits, auto-refresh, re-enrich)
+- Filter/sort logic (already compact)
+- JSX composing: Header bar, modals, `WatchlistFilters`, empty state, `WatchlistGroupTabs`, `WatchlistBulkActions`, `WatchlistTable`, `WatchlistAlertsSection`, and the three `AlertDialog` modals
+
+### Files summary
+
+| Action | File | Lines |
+|--------|------|-------|
+| Create | `src/components/watchlist/WatchlistTable.tsx` | ~250 |
+| Create | `src/components/watchlist/AlertPopover.tsx` | ~85 |
+| Create | `src/components/watchlist/WatchlistAlertsSection.tsx` | ~110 |
+| Edit | `src/pages/Watchlist.tsx` | 1050 -> ~350 |
+| No change | `src/pages/Portfolio.tsx` | Already 566, well-split |
+
+No behavior changes -- pure extraction with props passed from the parent.
