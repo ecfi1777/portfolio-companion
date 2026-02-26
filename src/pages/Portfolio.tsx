@@ -1119,11 +1119,11 @@ export default function Portfolio() {
                         ) : (
                           <button
                             type="button"
-                            className="inline-flex items-center gap-1 font-medium text-foreground text-right tabular-nums"
+                            className="relative inline-flex items-center font-medium text-foreground text-right tabular-nums"
                             onClick={() => handleStartCategoryTargetEdit(c.key, c.target)}
                           >
                             <span>{fmt(targetValue)} ({fmtPct(c.target)})</span>
-                            <Pencil className="h-3 w-3 opacity-0 transition-opacity group-hover/target:opacity-100" />
+                            <Pencil className="absolute -right-4 h-3 w-3 opacity-0 transition-opacity group-hover/target:opacity-100" />
                           </button>
                         )}
                       </div>
