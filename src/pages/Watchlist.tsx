@@ -7,7 +7,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -23,59 +22,25 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Eye, EyeOff, Plus, Settings, Search, Bell, BellRing, ChevronDown, ChevronUp, ArrowUpDown, Trash2, X, Tag as TagIcon, RefreshCw, AlertTriangle, Clock, Flame, Upload, DatabaseZap, Archive, FolderOpen, Folder,
+  Eye, Plus, Settings, Bell, BellRing, ChevronDown, RefreshCw, AlertTriangle, Clock, Flame, Upload, DatabaseZap, FolderOpen, X,
 } from "lucide-react";
-import { useWatchlist, type WatchlistEntry, type WatchlistGroup } from "@/hooks/use-watchlist";
+import { useWatchlist, type WatchlistEntry } from "@/hooks/use-watchlist";
 import { usePortfolioSettings } from "@/hooks/use-portfolio-settings";
-import { useAlerts, type AlertType, type PriceAlert } from "@/hooks/use-alerts";
-import { AddToWatchlistModal, type AddToWatchlistData, type PendingAlertData } from "@/components/AddToWatchlistModal";
+import { useAlerts, type AlertType } from "@/hooks/use-alerts";
+import { AddToWatchlistModal } from "@/components/AddToWatchlistModal";
 import { ManageTagsModal } from "@/components/ManageTagsModal";
 import { ManageGroupsModal } from "@/components/ManageGroupsModal";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { formatMarketCap } from "@/lib/market-cap";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/hooks/use-toast";
 
-/* ── Formatters ── */
-const fmtPrice = (n: number | null) =>
-  n != null ? n.toLocaleString("en-US", { style: "currency", currency: "USD" }) : "—";
-
-const fmtPct = (n: number) =>
-  (n >= 0 ? "+" : "") + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "%";
-
-const fmtDollar = (n: number) =>
-  (n >= 0 ? "+$" : "-$") + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-const CAP_COLORS: Record<string, string> = {
-  MEGA: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300",
-  LARGE: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
-  MID: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
-  SMALL: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
-  MICRO: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",
-  NANO: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
-};
-
-const CAP_ORDER = ["MEGA", "LARGE", "MID", "SMALL", "MICRO", "NANO"];
-
-/* ── Helpers ── */
-function calcDayChg(e: WatchlistEntry) {
-  return e.current_price != null && e.previous_close != null && e.previous_close > 0
-    ? ((e.current_price - e.previous_close) / e.previous_close) * 100
-    : null;
-}
-
-function calcSinceAdded(e: WatchlistEntry) {
-  return e.current_price != null && e.price_when_added != null && e.price_when_added > 0
-    ? ((e.current_price - e.price_when_added) / e.price_when_added) * 100
-    : null;
-}
-
-function pctColor(v: number | null) {
-  if (v == null) return "text-muted-foreground";
-  return v >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400";
-}
+import { fmtPrice, fmtPct, fmtDollar, CAP_COLORS, CAP_ORDER, calcDayChg, calcSinceAdded, pctColor } from "@/lib/watchlist-utils";
+import { WatchlistFilters } from "@/components/watchlist/WatchlistFilters";
+import { WatchlistBulkActions } from "@/components/watchlist/WatchlistBulkActions";
+import { WatchlistEntryDetail } from "@/components/watchlist/WatchlistEntryDetail";
+import { WatchlistGroupTabs } from "@/components/watchlist/WatchlistGroupTabs";
+import { SortHeader } from "@/components/watchlist/SortHeader";
 
 type SortKey = "symbol" | "price" | "dayChg" | "sinceAdded" | "marketCap" | "dateAdded" | "heat";
 
@@ -95,84 +60,6 @@ type SymbolScreenData = {
 };
 type SortDir = "asc" | "desc";
 type PerfFilter = "all" | "gainers" | "losers";
-
-/* ── Multi-select filter dropdown ── */
-function FilterDropdown({
-  label,
-  options,
-  selected,
-  onToggle,
-}: {
-  label: string;
-  options: { value: string; label: string; color?: string | null }[];
-  selected: Set<string>;
-  onToggle: (value: string) => void;
-}) {
-  const count = selected.size;
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="h-8 gap-1">
-          {label}
-          {count > 0 && (
-            <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">
-              {count}
-            </Badge>
-          )}
-          <ChevronDown className="h-3 w-3" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-52 p-2" align="start">
-        {options.map((opt) => (
-          <label key={opt.value} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent cursor-pointer text-sm">
-            <Checkbox
-              checked={selected.has(opt.value)}
-              onCheckedChange={() => onToggle(opt.value)}
-            />
-            {opt.color && (
-              <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: opt.color }} />
-            )}
-            {opt.label}
-          </label>
-        ))}
-        {options.length === 0 && <p className="text-xs text-muted-foreground px-2 py-1">None available</p>}
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-/* ── Sortable header ── */
-function SortHeader({
-  label,
-  sortKey,
-  currentKey,
-  currentDir,
-  onSort,
-  className,
-}: {
-  label: string;
-  sortKey: SortKey;
-  currentKey: SortKey;
-  currentDir: SortDir;
-  onSort: (k: SortKey) => void;
-  className?: string;
-}) {
-  const active = currentKey === sortKey;
-  const isRight = className?.includes("text-right");
-  const isCenter = className?.includes("text-center");
-  return (
-    <TableHead className={`cursor-pointer select-none group ${className ?? ""}`} onClick={() => onSort(sortKey)}>
-      <div className={`flex items-center gap-1 ${isRight ? "justify-end" : isCenter ? "justify-center" : ""}`}>
-        {label}
-        {active ? (
-          currentDir === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
-        ) : (
-          <ArrowUpDown className="h-3 w-3 opacity-0 group-hover:opacity-50 transition-opacity" />
-        )}
-      </div>
-    </TableHead>
-  );
-}
 
 /* ── Main Component ── */
 export default function Watchlist() {
@@ -287,7 +174,6 @@ export default function Watchlist() {
   const processed = useMemo(() => {
     let result = entries;
 
-    // Archive filter
     if (!showArchived) {
       result = result.filter((e) => !e.archived_at);
     }
@@ -298,7 +184,6 @@ export default function Watchlist() {
       );
     }
 
-    // Group tab filter
     if (groupTab !== "all") {
       if (groupTab === "__ungrouped__") {
         result = result.filter((e) => !e.group_id);
@@ -307,7 +192,6 @@ export default function Watchlist() {
       }
     }
 
-    // Group dropdown filter
     if (selectedGroups.size > 0) {
       result = result.filter((e) => {
         if (selectedGroups.has("__ungrouped__") && !e.group_id) return true;
@@ -634,58 +518,31 @@ export default function Watchlist() {
       />
 
       {/* Search + Filters */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative w-64">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search symbol or company..." className="pl-9 h-8" value={search} onChange={(e) => setSearch(e.target.value)} />
-        </div>
-
-        <FilterDropdown label="Tags" options={tagOptions} selected={selectedTags} onToggle={(v) => toggleSet(setSelectedTags, v)} />
-        <FilterDropdown label="Mkt Cap" options={capOptions} selected={selectedCaps} onToggle={(v) => toggleSet(setSelectedCaps, v)} />
-        <FilterDropdown label="Group" options={groupOptions} selected={selectedGroups} onToggle={(v) => toggleSet(setSelectedGroups, v)} />
-        <FilterDropdown label="Sector" options={sectorOptions} selected={selectedSectors} onToggle={(v) => toggleSet(setSelectedSectors, v)} />
-
-        {/* Performance toggle */}
-        <div className="flex items-center rounded-md border border-border h-8 text-xs">
-          {(["all", "gainers", "losers"] as PerfFilter[]).map((pf) => (
-            <button
-              key={pf}
-              onClick={() => setPerfFilter(pf)}
-              className={`px-3 h-full capitalize transition-colors ${
-                perfFilter === pf ? "bg-primary text-primary-foreground" : "hover:bg-accent"
-              } ${pf === "all" ? "rounded-l-md" : pf === "losers" ? "rounded-r-md" : ""}`}
-            >
-              {pf}
-            </button>
-          ))}
-        </div>
-
-        {/* Screened filter toggle */}
-        {Object.keys(screenHitsMap).length > 0 && (
-          <Button
-            variant={screenedFilter ? "default" : "outline"}
-            size="sm"
-            className="h-8 gap-1 text-xs"
-            onClick={() => setScreenedFilter((f) => !f)}
-          >
-            <Flame className="h-3 w-3" />
-            Screened
-          </Button>
-        )}
-
-        {/* Show Archived toggle */}
-        <div className="flex items-center gap-2 h-8">
-          <Switch checked={showArchived} onCheckedChange={setShowArchived} id="show-archived" />
-          <Label htmlFor="show-archived" className="text-xs cursor-pointer">Show Archived</Label>
-        </div>
-
-        {activeFilters > 0 && (
-          <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={clearFilters}>
-            Clear filters
-            <X className="ml-1 h-3 w-3" />
-          </Button>
-        )}
-      </div>
+      <WatchlistFilters
+        search={search}
+        onSearchChange={setSearch}
+        tagOptions={tagOptions}
+        capOptions={capOptions}
+        groupOptions={groupOptions}
+        sectorOptions={sectorOptions}
+        selectedTags={selectedTags}
+        selectedCaps={selectedCaps}
+        selectedGroups={selectedGroups}
+        selectedSectors={selectedSectors}
+        onToggleTag={(v) => toggleSet(setSelectedTags, v)}
+        onToggleCap={(v) => toggleSet(setSelectedCaps, v)}
+        onToggleGroup={(v) => toggleSet(setSelectedGroups, v)}
+        onToggleSector={(v) => toggleSet(setSelectedSectors, v)}
+        perfFilter={perfFilter}
+        onPerfFilterChange={setPerfFilter}
+        screenedFilter={screenedFilter}
+        onScreenedFilterChange={setScreenedFilter}
+        hasScreenHits={Object.keys(screenHitsMap).length > 0}
+        showArchived={showArchived}
+        onShowArchivedChange={setShowArchived}
+        activeFilters={activeFilters}
+        onClearFilters={clearFilters}
+      />
 
       {entries.length === 0 ? (
         <Card>
@@ -702,126 +559,37 @@ export default function Watchlist() {
       ) : (
         <>
         {/* Group tabs */}
-        {sortedGroups.length > 0 && (
-          <div className="flex items-center gap-1 overflow-x-auto pb-1">
-            <button
-              onClick={() => setGroupTab("all")}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-                groupTab === "all" ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-accent"
-              }`}
-            >
-              All
-            </button>
-            {sortedGroups.map((g) => (
-              <button
-                key={g.id}
-                onClick={() => setGroupTab(g.id)}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-                  groupTab === g.id ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-accent"
-                }`}
-              >
-                {g.color && <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: g.color }} />}
-                {g.name}
-              </button>
-            ))}
-            <button
-              onClick={() => setGroupTab("__ungrouped__")}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-                groupTab === "__ungrouped__" ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-accent"
-              }`}
-            >
-              Ungrouped
-            </button>
-          </div>
-        )}
+        <WatchlistGroupTabs
+          sortedGroups={sortedGroups}
+          groupTab={groupTab}
+          onSelect={setGroupTab}
+        />
         <Card>
           {/* Floating bulk action bar */}
-          {selectedIds.size > 0 && (() => {
-            const selectedEntries = entries.filter((e) => selectedIds.has(e.id));
-            const hasArchivedSelected = selectedEntries.some((e) => e.archived_at);
-            return (
-            <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/50">
-              <span className="text-sm font-medium">{selectedIds.size} selected</span>
-              <div className="flex items-center gap-2">
-                {hasArchivedSelected ? (
-                  <Button variant="outline" size="sm" onClick={async () => {
-                    const ids = [...selectedIds];
-                    await unarchiveEntries(ids);
-                    setSelectedIds(new Set());
-                    toast({ title: `Unarchived ${ids.length} entries` });
-                  }}>
-                    <EyeOff className="mr-1 h-4 w-4" />
-                    Unarchive Selected
-                  </Button>
-                ) : (
-                  <Button variant="outline" size="sm" onClick={async () => {
-                    const ids = [...selectedIds];
-                    await archiveEntries(ids);
-                    setSelectedIds(new Set());
-                    toast({ title: `Archived ${ids.length} entries` });
-                  }}>
-                    <Archive className="mr-1 h-4 w-4" />
-                    Archive Selected
-                  </Button>
-                )}
-                {/* Move to Group dropdown */}
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" size="sm">
-                      <Folder className="mr-1 h-4 w-4" />
-                      Move to Group
-                      <ChevronDown className="ml-1 h-3 w-3" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-48 p-1" align="end">
-                    <button
-                      className="flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent text-left"
-                      onClick={async () => {
-                        await assignEntriesToGroup([...selectedIds], null);
-                        setSelectedIds(new Set());
-                        toast({ title: `Moved ${selectedIds.size} entries to Ungrouped` });
-                      }}
-                    >
-                      Ungrouped
-                    </button>
-                    {sortedGroups.map((g) => (
-                      <button
-                        key={g.id}
-                        className="flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent text-left"
-                        onClick={async () => {
-                          await assignEntriesToGroup([...selectedIds], g.id);
-                          setSelectedIds(new Set());
-                          toast({ title: `Moved ${selectedIds.size} entries to ${g.name}` });
-                        }}
-                      >
-                        <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: g.color ?? "#888" }} />
-                        {g.name}
-                      </button>
-                    ))}
-                  </PopoverContent>
-                </Popover>
-                <Button variant="destructive" size="sm" onClick={() => setBulkDeleteOpen(true)}>
-                  <Trash2 className="mr-1 h-4 w-4" />
-                  Delete Selected
-                </Button>
-              </div>
-            </div>
-            );
-          })()}
+          <WatchlistBulkActions
+            selectedIds={selectedIds}
+            entries={entries}
+            sortedGroups={sortedGroups}
+            onArchive={archiveEntries}
+            onUnarchive={unarchiveEntries}
+            onAssignGroup={assignEntriesToGroup}
+            onDeleteClick={() => setBulkDeleteOpen(true)}
+            onClearSelection={() => setSelectedIds(new Set())}
+          />
           <div className="overflow-x-auto">
             <Table className="table-fixed">
               <colgroup>
-                <col className="w-[3%]" />   {/* Checkbox */}
-                <col className="w-[7%]" />   {/* Symbol */}
-                <col className="w-[16%]" />  {/* Company */}
-                <col className="w-[9%]" />   {/* Price */}
-                <col className="w-[9%]" />   {/* Day Chg % */}
-                <col className="w-[10%]" />  {/* Since Added % */}
-                <col className="w-[8%]" />   {/* Mkt Cap */}
-                <col className="w-[8%]" />   {/* Group */}
-                <col className="w-[10%]" />  {/* Tags */}
-                <col className="w-[14%]" />  {/* Screens */}
-                <col className="w-[6%]" />   {/* Alert icon */}
+                <col className="w-[3%]" />
+                <col className="w-[7%]" />
+                <col className="w-[16%]" />
+                <col className="w-[9%]" />
+                <col className="w-[9%]" />
+                <col className="w-[10%]" />
+                <col className="w-[8%]" />
+                <col className="w-[8%]" />
+                <col className="w-[10%]" />
+                <col className="w-[14%]" />
+                <col className="w-[6%]" />
               </colgroup>
               <TableHeader>
                 <TableRow>
@@ -976,205 +744,26 @@ export default function Watchlist() {
                       {/* Expanded row */}
                       {isExpanded && (
                         <TableRow className="bg-muted/30 hover:bg-muted/30">
-                          <TableCell colSpan={10} className="p-0">
-                            <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-6" onClick={(e) => e.stopPropagation()}>
-                              {/* Price details */}
-                              <div className="space-y-2">
-                                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Price Details</h4>
-                                <div className="space-y-1 text-sm">
-                                  <div className="flex justify-between">
-                                    <span className="text-muted-foreground">Current Price</span>
-                                    <span className="font-medium">{fmtPrice(entry.current_price)}</span>
-                                  </div>
-                                  <div className="flex justify-between">
-                                    <span className="text-muted-foreground">Price When Added</span>
-                                    <span>{fmtPrice(entry.price_when_added)}</span>
-                                  </div>
-                                  {sinceAdded != null && entry.current_price != null && entry.price_when_added != null && (
-                                    <>
-                                      <div className="flex justify-between">
-                                        <span className="text-muted-foreground">Dollar Change</span>
-                                        <span className={pctColor(sinceAdded)}>{fmtDollar(entry.current_price - entry.price_when_added)}</span>
-                                      </div>
-                                      <div className="flex justify-between">
-                                        <span className="text-muted-foreground">% Change</span>
-                                        <span className={pctColor(sinceAdded)}>{fmtPct(sinceAdded)}</span>
-                                      </div>
-                                    </>
-                                  )}
-                                  <div className="flex justify-between">
-                                    <span className="text-muted-foreground">Date Added</span>
-                                    <span>{new Date(entry.date_added).toLocaleDateString()}</span>
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Company info */}
-                              <div className="space-y-2">
-                                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Company Info</h4>
-                                <div className="space-y-1 text-sm">
-                                  <div className="flex justify-between">
-                                    <span className="text-muted-foreground">Industry</span>
-                                    <span>{entry.industry ?? "—"}</span>
-                                  </div>
-                                  <div className="flex justify-between">
-                                    <span className="text-muted-foreground">Sector</span>
-                                    <span>{entry.sector ?? "—"}</span>
-                                  </div>
-                                  <div className="flex justify-between">
-                                    <span className="text-muted-foreground">Market Cap</span>
-                                    <span>
-                                      {formatMarketCap(entry.market_cap)}
-                                      {entry.market_cap_category && (
-                                        <Badge variant="secondary" className={`ml-1 text-[10px] ${CAP_COLORS[entry.market_cap_category] ?? ""}`}>
-                                          {entry.market_cap_category}
-                                        </Badge>
-                                      )}
-                                    </span>
-                                  </div>
-                                </div>
-
-                                {/* Group section */}
-                                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider pt-2">Group</h4>
-                                <Select
-                                  value={entry.group_id ?? "__none__"}
-                                  onValueChange={async (v) => {
-                                    await assignEntriesToGroup([entry.id], v === "__none__" ? null : v);
-                                  }}
-                                >
-                                  <SelectTrigger className="h-7 text-xs w-full">
-                                    <SelectValue placeholder="Ungrouped" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="__none__" className="text-xs">Ungrouped</SelectItem>
-                                    {sortedGroups.map((g) => (
-                                      <SelectItem key={g.id} value={g.id} className="text-xs">
-                                        <span className="flex items-center gap-1.5">
-                                          <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: g.color ?? "#888" }} />
-                                          {g.name}
-                                        </span>
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-
-                                {/* Tags section */}
-                                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider pt-2">Tags</h4>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {entryTags.map((tag) => (
-                                    <span
-                                      key={tag.id}
-                                      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium border"
-                                      style={{
-                                        backgroundColor: tag.color ? `${tag.color}20` : undefined,
-                                        color: tag.color ?? undefined,
-                                        borderColor: tag.color ? `${tag.color}40` : undefined,
-                                      }}
-                                    >
-                                      {tag.short_code}
-                                      <button
-                                        onClick={() => removeEntryTag(entry.id, tag.id)}
-                                        className="hover:opacity-70"
-                                      >
-                                        <X className="h-3 w-3" />
-                                      </button>
-                                    </span>
-                                  ))}
-                                  {availableTags.length > 0 && (
-                                    <Popover>
-                                      <PopoverTrigger asChild>
-                                        <button className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:border-foreground hover:text-foreground transition-colors">
-                                          <TagIcon className="h-3 w-3" />
-                                          Add
-                                        </button>
-                                      </PopoverTrigger>
-                                      <PopoverContent className="w-48 p-1" align="start">
-                                        {availableTags.map((t) => (
-                                          <button
-                                            key={t.id}
-                                            className="flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent text-left"
-                                            onClick={() => addEntryTag(entry.id, t.id)}
-                                          >
-                                            <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: t.color ?? undefined }} />
-                                            {t.short_code}
-                                            {t.full_name && <span className="text-muted-foreground text-xs">– {t.full_name}</span>}
-                                          </button>
-                                        ))}
-                                      </PopoverContent>
-                                    </Popover>
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* Alerts */}
-                              <div className="space-y-2">
-                                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Alerts</h4>
-                                {entryAlerts.length > 0 ? (
-                                  <div className="space-y-1.5">
-                                    {entryAlerts.map((a) => (
-                                      <div key={a.id} className="flex items-center justify-between text-sm rounded-md border px-2 py-1.5">
-                                        <div className="flex items-center gap-2">
-                                          {a.is_active ? (
-                                            <BellRing className="h-3.5 w-3.5 text-amber-500" />
-                                          ) : (
-                                            <Bell className="h-3.5 w-3.5 text-muted-foreground/50" />
-                                          )}
-                                          <span className="text-xs">
-                                            {a.alert_type.replace(/_/g, " ")}
-                                            {": "}
-                                            {a.alert_type.startsWith("PCT") ? `${a.target_value}%` : `$${a.target_value}`}
-                                          </span>
-                                          {a.triggered_at && (
-                                            <Badge variant="secondary" className="text-[10px]">Triggered</Badge>
-                                          )}
-                                        </div>
-                                        <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => setDeleteAlertConfirm(a.id)}>
-                                          <X className="h-3 w-3" />
-                                        </Button>
-                                      </div>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <p className="text-xs text-muted-foreground">No alerts set</p>
-                                )}
-                                <AlertPopover entryId={entry.id} symbol={entry.symbol} currentPrice={entry.current_price} createAlert={createAlert} />
-                              </div>
-
-                              {/* Notes + Actions */}
-                              <div className="space-y-2">
-                                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Notes</h4>
-                                <Textarea
-                                  className="text-sm min-h-[80px] resize-none"
-                                  placeholder="Add notes..."
-                                  value={editingNotes[entry.id] ?? entry.notes ?? ""}
-                                  onChange={(e) => setEditingNotes((prev) => ({ ...prev, [entry.id]: e.target.value }))}
-                                  onBlur={() => handleNotesBlur(entry.id)}
-                                />
-                                {isArchived && (
-                                  <Button
-                                    variant="secondary"
-                                    size="sm"
-                                    className="w-full mt-2"
-                                    onClick={async () => {
-                                      await unarchiveEntries([entry.id]);
-                                      toast({ title: `Unarchived ${entry.symbol}` });
-                                    }}
-                                  >
-                                    <EyeOff className="mr-1 h-4 w-4" />
-                                    Unarchive
-                                  </Button>
-                                )}
-                                <Button
-                                  variant="destructive"
-                                  size="sm"
-                                  className="w-full mt-2"
-                                  onClick={() => setDeleteConfirm(entry)}
-                                >
-                                  <Trash2 className="mr-1 h-4 w-4" />
-                                  Remove from Watchlist
-                                </Button>
-                              </div>
-                            </div>
+                          <TableCell colSpan={11} className="p-0">
+                            <WatchlistEntryDetail
+                              entry={entry}
+                              entryTags={entryTags}
+                              availableTags={availableTags}
+                              entryAlerts={entryAlerts}
+                              sortedGroups={sortedGroups}
+                              editingNotes={editingNotes}
+                              onEditNotes={(id, val) => setEditingNotes((prev) => ({ ...prev, [id]: val }))}
+                              onNotesBlur={handleNotesBlur}
+                              onAddTag={addEntryTag}
+                              onRemoveTag={removeEntryTag}
+                              onDeleteAlertConfirm={setDeleteAlertConfirm}
+                              onAssignGroup={assignEntriesToGroup}
+                              onUnarchive={unarchiveEntries}
+                              onDeleteConfirm={setDeleteConfirm}
+                              isArchived={isArchived}
+                              AlertPopoverComponent={AlertPopover}
+                              createAlert={createAlert}
+                            />
                           </TableCell>
                         </TableRow>
                       )}
@@ -1183,7 +772,7 @@ export default function Watchlist() {
                 })}
                 {processed.length === 0 && entries.length > 0 && (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
                       No results matching your filters
                     </TableCell>
                   </TableRow>
@@ -1244,7 +833,7 @@ export default function Watchlist() {
                             </TableCell>
                             <TableCell>
                               <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setDeleteAlertConfirm(a.id)}>
-                                <Trash2 className="h-3 w-3" />
+                                <X className="h-3 w-3" />
                               </Button>
                             </TableCell>
                           </TableRow>
