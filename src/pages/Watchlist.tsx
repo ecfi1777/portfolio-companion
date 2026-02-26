@@ -23,7 +23,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Eye, Plus, Settings, Search, Bell, BellRing, ChevronDown, ChevronUp, ArrowUpDown, Trash2, X, Tag as TagIcon, RefreshCw, AlertTriangle, Clock, Flame, Upload, DatabaseZap,
+  Eye, EyeOff, Plus, Settings, Search, Bell, BellRing, ChevronDown, ChevronUp, ArrowUpDown, Trash2, X, Tag as TagIcon, RefreshCw, AlertTriangle, Clock, Flame, Upload, DatabaseZap, Archive,
 } from "lucide-react";
 import { useWatchlist, type WatchlistEntry } from "@/hooks/use-watchlist";
 import { usePortfolioSettings } from "@/hooks/use-portfolio-settings";
@@ -33,6 +33,7 @@ import { ManageTagsModal } from "@/components/ManageTagsModal";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatMarketCap } from "@/lib/market-cap";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/hooks/use-toast";
 
@@ -177,7 +178,7 @@ export default function Watchlist() {
   const { user } = useAuth();
   const {
     entries, tags, loading, addEntry, deleteEntry, updateEntryNotes,
-    addEntryTag, removeEntryTag, createTag, updateTag, deleteTag, refreshPrices, refetch: refetchWatchlist,
+    addEntryTag, removeEntryTag, createTag, updateTag, deleteTag, refreshPrices, archiveEntries, unarchiveEntries, refetch: refetchWatchlist,
   } = useWatchlist();
   const { settings } = usePortfolioSettings();
   const { activeAlerts, triggeredAlerts, createAlert, deleteAlert, getAlertsForEntry, refetch: refetchAlerts } = useAlerts();
@@ -225,6 +226,7 @@ export default function Watchlist() {
   const [selectedCaps, setSelectedCaps] = useState<Set<string>>(new Set());
   const [selectedSectors, setSelectedSectors] = useState<Set<string>>(new Set());
   const [perfFilter, setPerfFilter] = useState<PerfFilter>("all");
+  const [showArchived, setShowArchived] = useState(false);
 
   // Sorting
   const [sortKey, setSortKey] = useState<SortKey>("dateAdded");
@@ -270,6 +272,10 @@ export default function Watchlist() {
   const processed = useMemo(() => {
     let result = entries;
 
+    // Archive filter
+    if (!showArchived) {
+      result = result.filter((e) => !e.archived_at);
+    }
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter(
@@ -316,9 +322,9 @@ export default function Watchlist() {
     });
 
     return sorted;
-  }, [entries, search, selectedTags, selectedCaps, selectedSectors, perfFilter, screenedFilter, screenHitsMap, sortKey, sortDir]);
+  }, [entries, search, selectedTags, selectedCaps, selectedSectors, perfFilter, screenedFilter, screenHitsMap, sortKey, sortDir, showArchived]);
 
-  const activeFilters = selectedTags.size + selectedCaps.size + selectedSectors.size + (perfFilter !== "all" ? 1 : 0) + (screenedFilter ? 1 : 0);
+  const activeFilters = selectedTags.size + selectedCaps.size + selectedSectors.size + (perfFilter !== "all" ? 1 : 0) + (screenedFilter ? 1 : 0) + (showArchived ? 1 : 0);
 
   const clearFilters = () => {
     setSelectedTags(new Set());
@@ -326,6 +332,7 @@ export default function Watchlist() {
     setSelectedSectors(new Set());
     setPerfFilter("all");
     setScreenedFilter(false);
+    setShowArchived(false);
   };
 
   const handleNotesBlur = async (entryId: string) => {
@@ -626,6 +633,12 @@ export default function Watchlist() {
           </Button>
         )}
 
+        {/* Show Archived toggle */}
+        <div className="flex items-center gap-2 h-8">
+          <Switch checked={showArchived} onCheckedChange={setShowArchived} id="show-archived" />
+          <Label htmlFor="show-archived" className="text-xs cursor-pointer">Show Archived</Label>
+        </div>
+
         {activeFilters > 0 && (
           <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={clearFilters}>
             Clear filters
@@ -649,15 +662,42 @@ export default function Watchlist() {
       ) : (
         <Card>
           {/* Floating bulk action bar */}
-          {selectedIds.size > 0 && (
+          {selectedIds.size > 0 && (() => {
+            const selectedEntries = entries.filter((e) => selectedIds.has(e.id));
+            const hasArchivedSelected = selectedEntries.some((e) => e.archived_at);
+            return (
             <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/50">
               <span className="text-sm font-medium">{selectedIds.size} selected</span>
-              <Button variant="destructive" size="sm" onClick={() => setBulkDeleteOpen(true)}>
-                <Trash2 className="mr-1 h-4 w-4" />
-                Delete Selected
-              </Button>
+              <div className="flex items-center gap-2">
+                {hasArchivedSelected ? (
+                  <Button variant="outline" size="sm" onClick={async () => {
+                    const ids = [...selectedIds];
+                    await unarchiveEntries(ids);
+                    setSelectedIds(new Set());
+                    toast({ title: `Unarchived ${ids.length} entries` });
+                  }}>
+                    <EyeOff className="mr-1 h-4 w-4" />
+                    Unarchive Selected
+                  </Button>
+                ) : (
+                  <Button variant="outline" size="sm" onClick={async () => {
+                    const ids = [...selectedIds];
+                    await archiveEntries(ids);
+                    setSelectedIds(new Set());
+                    toast({ title: `Archived ${ids.length} entries` });
+                  }}>
+                    <Archive className="mr-1 h-4 w-4" />
+                    Archive Selected
+                  </Button>
+                )}
+                <Button variant="destructive" size="sm" onClick={() => setBulkDeleteOpen(true)}>
+                  <Trash2 className="mr-1 h-4 w-4" />
+                  Delete Selected
+                </Button>
+              </div>
             </div>
-          )}
+            );
+          })()}
           <div className="overflow-x-auto">
             <Table className="table-fixed">
               <colgroup>
@@ -699,11 +739,12 @@ export default function Watchlist() {
                   const hasActiveAlert = entryAlerts.some((a) => a.is_active);
                   const hasTriggeredUnacked = entryAlerts.some((a) => a.triggered_at != null && a.acknowledged_at == null);
                   const screenData = screenHitsMap[entry.symbol.toUpperCase()];
+                  const isArchived = !!entry.archived_at;
 
                   return (
                     <React.Fragment key={entry.id}>
                       <TableRow
-                        className="cursor-pointer"
+                        className={`cursor-pointer ${isArchived ? "opacity-50" : ""}`}
                         onClick={() => setExpandedId(isExpanded ? null : entry.id)}
                       >
                         <TableCell className="w-8" onClick={(e) => e.stopPropagation()}>
@@ -712,7 +753,12 @@ export default function Watchlist() {
                             onCheckedChange={() => toggleSelectOne(entry.id)}
                           />
                         </TableCell>
-                        <TableCell className="font-medium whitespace-nowrap">{entry.symbol}</TableCell>
+                        <TableCell className="font-medium whitespace-nowrap">
+                          {entry.symbol}
+                          {isArchived && (
+                            <Badge variant="secondary" className="ml-1.5 text-[10px] opacity-75">Archived</Badge>
+                          )}
+                        </TableCell>
                         <TableCell className="text-muted-foreground truncate overflow-hidden">{entry.company_name ?? "—"}</TableCell>
                         <TableCell className="text-right tabular-nums whitespace-nowrap">{fmtPrice(entry.current_price)}</TableCell>
                         <TableCell className={`text-right tabular-nums whitespace-nowrap ${pctColor(dayChg)}`}>
@@ -963,6 +1009,20 @@ export default function Watchlist() {
                                   onChange={(e) => setEditingNotes((prev) => ({ ...prev, [entry.id]: e.target.value }))}
                                   onBlur={() => handleNotesBlur(entry.id)}
                                 />
+                                {isArchived && (
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    className="w-full mt-2"
+                                    onClick={async () => {
+                                      await unarchiveEntries([entry.id]);
+                                      toast({ title: `Unarchived ${entry.symbol}` });
+                                    }}
+                                  >
+                                    <EyeOff className="mr-1 h-4 w-4" />
+                                    Unarchive
+                                  </Button>
+                                )}
                                 <Button
                                   variant="destructive"
                                   size="sm"

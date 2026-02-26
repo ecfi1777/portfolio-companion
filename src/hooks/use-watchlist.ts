@@ -21,6 +21,7 @@ export interface WatchlistEntry {
   market_cap_category: string | null;
   notes: string | null;
   last_price_update: string | null;
+  archived_at: string | null;
   created_at: string;
   updated_at: string;
   tags?: Tag[];
@@ -254,7 +255,8 @@ export function useWatchlist() {
     onProgress?: (done: number, total: number) => void
   ): Promise<{ succeeded: number; failed: number; total: number }> => {
     if (!user || entries.length === 0 || !apiKey) return { succeeded: 0, failed: 0, total: 0 };
-    const symbols = entries.map((e) => e.symbol);
+    const activeEntries = entries.filter((e) => !e.archived_at);
+    const symbols = activeEntries.map((e) => e.symbol);
     const profiles = await fetchProfilesBatched(symbols, apiKey, onProgress);
     if (profiles.length === 0) return { succeeded: 0, failed: 0, total: symbols.length };
     const now = new Date().toISOString();
@@ -302,6 +304,19 @@ export function useWatchlist() {
     return { succeeded: profiles.length, failed: symbols.length - profiles.length, total: symbols.length };
   }, [user, entries]);
 
+  const archiveEntries = async (ids: string[]) => {
+    if (!user || ids.length === 0) return;
+    const now = new Date().toISOString();
+    await supabase.from("watchlist_entries").update({ archived_at: now } as any).in("id", ids);
+    setEntries((prev) => prev.map((e) => ids.includes(e.id) ? { ...e, archived_at: now } : e));
+  };
+
+  const unarchiveEntries = async (ids: string[]) => {
+    if (!user || ids.length === 0) return;
+    await supabase.from("watchlist_entries").update({ archived_at: null } as any).in("id", ids);
+    setEntries((prev) => prev.map((e) => ids.includes(e.id) ? { ...e, archived_at: null } : e));
+  };
+
   return {
     entries: enrichedEntries,
     tags: tagsWithCounts,
@@ -315,6 +330,8 @@ export function useWatchlist() {
     updateTag,
     deleteTag,
     refreshPrices,
+    archiveEntries,
+    unarchiveEntries,
     refetch: fetchAll,
   };
 }
