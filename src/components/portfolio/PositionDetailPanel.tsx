@@ -27,6 +27,7 @@ export function TagBadge({ tag, onRemove }: { tag: TagRow; onRemove?: () => void
         color: color,
         borderColor: hexToRgba(color, 0.4),
       }}
+      title={tag.full_name || tag.short_code}
     >
       {tag.short_code}
       {onRemove && (
