@@ -1084,10 +1084,12 @@ export default function Portfolio() {
                       <p className="text-sm font-semibold" style={{ color: CATEGORY_COLORS[c.key]?.text ?? "inherit" }}>{c.name}</p>
                     </div>
 
+
+
                     <div className="mt-3 divide-y divide-border">
                       <div className="flex items-center justify-between py-1.5 text-xs">
                         <span className="text-muted-foreground">Current</span>
-                        <span className="font-medium text-foreground text-right tabular-nums">{fmt(c.value)} ({fmtPct(c.pct)})</span>
+                        <span className="font-medium text-foreground text-right tabular-nums">{fmt(c.value)} — {fmtPct(c.pct)} of portfolio</span>
                       </div>
 
                       <div className="group/target flex items-center justify-between py-1.5 text-xs">
@@ -1122,11 +1124,20 @@ export default function Portfolio() {
                             className="relative inline-flex items-center font-medium text-foreground text-right tabular-nums"
                             onClick={() => handleStartCategoryTargetEdit(c.key, c.target)}
                           >
-                            <span>{fmt(targetValue)} ({fmtPct(c.target)})</span>
+                            <span>{fmt(targetValue)} — {fmtPct(c.target)} of portfolio</span>
                             <Pencil className="absolute -right-4 h-3 w-3 opacity-0 transition-opacity group-hover/target:opacity-100" />
                           </button>
                         )}
                       </div>
+
+                      {!c.isUnassigned && (
+                        <div className="flex items-center justify-between py-1.5 text-xs">
+                          <span className="text-muted-foreground">Progress</span>
+                          <span className="font-medium text-foreground text-right tabular-nums">
+                            {fmtPct(c.target > 0 ? (c.pct / c.target) * 100 : 0)} of target
+                          </span>
+                        </div>
+                      )}
 
                       <div className="flex items-center justify-between py-1.5 text-xs">
                         <span className="text-muted-foreground">Delta</span>
