@@ -98,8 +98,12 @@ export function CategorySelector({ positionId, category, tier, onUpdate, onTierS
     return null;
   })();
 
-  // Determine select value
-  const selectValue = tier ?? (category && !tier ? `cat:${category}` : "");
+  // Determine select value (invalid/removed assignments fall back to unassigned placeholder)
+  const selectValue = currentTierConfig
+    ? currentTierConfig.tier.key
+    : currentCatOnly
+      ? `cat:${currentCatOnly.key}`
+      : "";
 
   const handleSaveTier = async () => {
     if (currentTierConfig) {
@@ -226,7 +230,7 @@ export function CategorySelector({ positionId, category, tier, onUpdate, onTierS
     </Select>
   );
 
-  // No assignment or orphan — just show select (orphan can reassign)
+  // No valid assignment — show select with Assign placeholder
   if (!currentTierConfig && !currentCatOnly) {
     return (
       <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
@@ -268,7 +272,7 @@ export function CategorySelector({ positionId, category, tier, onUpdate, onTierS
                   )}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Slots: <span className="font-medium text-foreground">{count}/{currentTierConfig.tier.max_positions}</span> filled
+                  Maximum Positions: <span className="font-medium text-foreground">{count}/{currentTierConfig.tier.max_positions}</span>
                 </p>
               </div>
 
@@ -360,7 +364,7 @@ export function CategorySelector({ positionId, category, tier, onUpdate, onTierS
                   </p>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  Slots: <span className="font-medium text-foreground">{count}/{currentCatOnly.target_positions}</span> filled
+                  Maximum Positions: <span className="font-medium text-foreground">{count}/{currentCatOnly.target_positions}</span>
                 </p>
               </div>
 
@@ -378,7 +382,7 @@ export function CategorySelector({ positionId, category, tier, onUpdate, onTierS
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-[11px]">Target Positions</Label>
+                    <Label className="text-[11px]">Maximum Positions</Label>
                     <Input
                       type="number"
                       step="1"

@@ -78,16 +78,31 @@ export default function Settings() {
         next = { ...settings, categories: draft.categories };
 
         // Auto-unassign positions whose category was deleted
+        // Also match legacy rows that may store display_name instead of key.
         const oldKeys = new Set(settings.categories.map((c) => c.key));
         const newKeys = new Set(draft.categories.map((c) => c.key));
-        const deletedKeys = [...oldKeys].filter((k) => !newKeys.has(k));
-        if (deletedKeys.length > 0) {
+        const deletedCategories = settings.categories.filter((c) => oldKeys.has(c.key) && !newKeys.has(c.key));
+        if (deletedCategories.length > 0) {
+          const deletedIdentifiers = Array.from(
+            new Set(
+              deletedCategories
+                .flatMap((c) => [c.key, c.display_name])
+                .filter((v): v is string => Boolean(v))
+            )
+          );
+
           const { error: unassignErr } = await supabase
             .from("positions")
             .update({ category: null, tier: null })
-            .in("category", deletedKeys);
+            .in("category", deletedIdentifiers);
+
           if (unassignErr) {
             console.error("Failed to unassign positions for deleted categories:", unassignErr);
+            toast({
+              title: "Category cleanup failed",
+              description: "Some positions could not be unassigned from deleted categories.",
+              variant: "destructive",
+            });
           }
         }
 

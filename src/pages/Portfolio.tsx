@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { DollarSign, TrendingUp, Hash, ChevronRight, Upload, ArrowUpDown, Tag, Banknote, ChevronDown, AlertTriangle, Trash2, Calendar, RefreshCw, Clock, Settings, X, Plus } from "lucide-react";
+import { DollarSign, TrendingUp, Hash, ChevronRight, Upload, ArrowUpDown, Tag, Banknote, ChevronDown, AlertTriangle, Trash2, Calendar, RefreshCw, Clock, Settings, X, Plus, Info, Pencil } from "lucide-react";
 import { UpdatePortfolioModal } from "@/components/UpdatePortfolioModal";
 import { ManagePortfolioDialog } from "@/components/ManagePortfolioSection";
 import { CategorySelector } from "@/components/CategorySelector";
@@ -410,7 +410,9 @@ export default function Portfolio() {
   const [sortKey, setSortKey] = useState<SortKey>("current_value");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [deployOpen, setDeployOpen] = useState(true);
-  const { settings, loading: settingsLoading, refetch: refetchSettings } = usePortfolioSettings();
+  const [editingCategoryKey, setEditingCategoryKey] = useState<string | null>(null);
+  const [targetDraft, setTargetDraft] = useState("");
+  const { settings, loading: settingsLoading, refetch: refetchSettings, updateSettings } = usePortfolioSettings();
   const fmpApiKey = settings.fmp_api_key;
   const [refreshing, setRefreshing] = useState(false);
   const [refreshProgress, setRefreshProgress] = useState<{ done: number; total: number } | null>(null);
@@ -597,30 +599,102 @@ export default function Portfolio() {
     return counts;
   }, [stockPositions]);
 
-  // Category breakdown — driven by settings (only show settings categories + Unassigned)
+  // Category breakdown — driven by settings (only settings categories + Unassigned when needed)
   const categoryBreakdown = useMemo(() => {
     const settingsKeys = new Set(settings.categories.map((c) => c.key));
-    const groups: Record<string, number> = {};
-    for (const cat of settings.categories) groups[cat.key] = 0;
-    groups["Unassigned"] = 0;
+    const grouped: Record<string, { value: number; count: number }> = {};
+
+    for (const cat of settings.categories) grouped[cat.key] = { value: 0, count: 0 };
+    grouped["Unassigned"] = { value: 0, count: 0 };
+
     for (const p of stockPositions) {
-      const rawKey = (p.category as string) ?? "Unassigned";
-      // Positions with a category that no longer exists in settings go to Unassigned
-      const key = rawKey === "Unassigned" || settingsKeys.has(rawKey) ? rawKey : "Unassigned";
-      groups[key] = (groups[key] ?? 0) + (p.current_value ?? 0);
+      const rawKey = p.category as string | null;
+      const key = rawKey && settingsKeys.has(rawKey) ? rawKey : "Unassigned";
+      grouped[key].value += p.current_value ?? 0;
+      grouped[key].count += 1;
     }
+
     const catTargets = getCategoryTargets(settings);
-    return Object.entries(groups).map(([key, value]) => {
-      const catConfig = settings.categories.find((c) => c.key === key);
-      return {
-        name: catConfig?.display_name ?? key,
-        key,
-        value,
-        pct: totalEquity > 0 ? (value / totalEquity) * 100 : 0,
-        target: key !== "Unassigned" ? (catTargets[key] ?? 0) : 0,
-      };
-    });
+    const categories = settings.categories.map((cat) => ({
+      name: cat.display_name,
+      key: cat.key,
+      value: grouped[cat.key]?.value ?? 0,
+      count: grouped[cat.key]?.count ?? 0,
+      pct: totalEquity > 0 ? ((grouped[cat.key]?.value ?? 0) / totalEquity) * 100 : 0,
+      target: catTargets[cat.key] ?? 0,
+      targetPositions: cat.target_positions,
+      isUnassigned: false,
+    }));
+
+    const unassigned = grouped["Unassigned"];
+    if (unassigned.count > 0) {
+      categories.push({
+        name: "Unassigned",
+        key: "Unassigned",
+        value: unassigned.value,
+        count: unassigned.count,
+        pct: totalEquity > 0 ? (unassigned.value / totalEquity) * 100 : 0,
+        target: 0,
+        targetPositions: 0,
+        isUnassigned: true,
+      });
+    }
+
+    return categories;
   }, [stockPositions, totalEquity, settings]);
+
+  const handleStartCategoryTargetEdit = (categoryKey: string, currentTarget: number) => {
+    setEditingCategoryKey(categoryKey);
+    setTargetDraft(currentTarget.toFixed(2));
+  };
+
+  const handleSaveCategoryTarget = async (categoryKey: string) => {
+    const parsed = Number(targetDraft);
+    if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
+      toast({ title: "Invalid target", description: "Enter a percentage between 0 and 100.", variant: "destructive" });
+      setEditingCategoryKey(null);
+      setTargetDraft("");
+      return;
+    }
+
+    const nextTarget = Number(parsed.toFixed(2));
+    const nextCategories = settings.categories.map((cat) => {
+      if (cat.key !== categoryKey) return cat;
+
+      if (cat.tiers.length === 0) {
+        return { ...cat, target_pct: nextTarget };
+      }
+
+      const currentTotal = cat.tiers.reduce((sum, t) => sum + t.allocation_pct, 0);
+      if (currentTotal <= 0) {
+        const base = Number((nextTarget / cat.tiers.length).toFixed(2));
+        let allocated = 0;
+        const tiers = cat.tiers.map((tier, idx) => {
+          if (idx === cat.tiers.length - 1) {
+            return { ...tier, allocation_pct: Number((nextTarget - allocated).toFixed(2)) };
+          }
+          allocated += base;
+          return { ...tier, allocation_pct: base };
+        });
+        return { ...cat, tiers };
+      }
+
+      let running = 0;
+      const tiers = cat.tiers.map((tier, idx) => {
+        if (idx === cat.tiers.length - 1) {
+          return { ...tier, allocation_pct: Number((nextTarget - running).toFixed(2)) };
+        }
+        const scaled = Number(((tier.allocation_pct / currentTotal) * nextTarget).toFixed(2));
+        running += scaled;
+        return { ...tier, allocation_pct: scaled };
+      });
+      return { ...cat, tiers };
+    });
+
+    await updateSettings({ ...settings, categories: nextCategories });
+    setEditingCategoryKey(null);
+    setTargetDraft("");
+  };
 
   // Underweight positions (buy list)
   const deployCapitalList = useMemo(() => {
@@ -918,6 +992,35 @@ export default function Portfolio() {
       {positions.length > 0 && (
         <Card>
           <CardContent className="py-4">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold">Category Allocation Overview</h3>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" aria-label="How Portfolio Categories Work">
+                    <Info className="h-4 w-4" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[380px] p-4" align="end">
+                  <div className="space-y-3 text-sm">
+                    <h4 className="font-semibold">How Portfolio Categories Work</h4>
+                    <p className="text-muted-foreground">
+                      Organize your positions into custom categories to define your ideal portfolio allocation. Each category has a target percentage of your total portfolio and a maximum number of positions.
+                    </p>
+                    <ul className="list-disc space-y-1 pl-4 text-muted-foreground">
+                      <li>Set up categories and tiers in Settings — you can have 1 to 10 categories, each with optional sub-tiers for finer control.</li>
+                      <li>Assign each position to a category using the dropdown in the Category column.</li>
+                      <li>The Allocation Target column shows how far each position is from its per-position target.</li>
+                      <li>The category cards above show your overall progress toward each category's target allocation.</li>
+                      <li>The Rebalance Capital section tells you what to buy and trim to reach your targets.</li>
+                    </ul>
+                    <p className="text-muted-foreground">
+                      All category assignments, tags, and notes are preserved when you update your portfolio with new CSV data.
+                    </p>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+
             {/* Stacked bar — invested categories + cash */}
             {(() => {
               const investedPct = grandTotal > 0 ? (totalEquity / grandTotal) * 100 : 0;
@@ -957,41 +1060,99 @@ export default function Portfolio() {
                 </>
               );
             })()}
-            {/* Legend with targets */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {categoryBreakdown.map((c) => (
-                <div
-                  key={c.key}
-                  className="rounded-md px-3 py-2"
-                  style={{ backgroundColor: CATEGORY_COLORS[c.key]?.bg ?? "rgba(100,116,139,0.1)" }}
-                >
-                  <p className="text-xs font-medium" style={{ color: CATEGORY_COLORS[c.key]?.text ?? "inherit" }}>{c.name}</p>
-                  <p className="text-sm font-bold">{fmt(c.value)}</p>
-                  {c.target > 0 && (
-                    <p className="text-xs text-muted-foreground">Target: {fmt((c.target / 100) * grandTotal)}</p>
-                  )}
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">{fmtPct(c.pct)}</span>
-                    {c.target > 0 && (
-                      <>
-                        <span className="text-xs text-muted-foreground/50">/</span>
-                        <span className="text-xs text-muted-foreground">{fmtPct(c.target)} target</span>
-                      </>
-                    )}
-                  </div>
-                  {c.target > 0 && (
-                    <div className="mt-1.5 h-1 w-full rounded-full bg-muted-foreground/10 overflow-hidden">
-                      <div
-                        className="h-full rounded-full opacity-60 transition-all"
-                        style={{
-                          width: `${Math.min((c.pct / c.target) * 100, 100)}%`,
-                          backgroundColor: CATEGORY_COLORS[c.key]?.bar ?? "rgba(100,116,139,0.3)",
-                        }}
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {categoryBreakdown.map((c) => {
+                const targetValue = (c.target / 100) * grandTotal;
+                const deltaDollar = targetValue - c.value;
+                const tolerance = targetValue * 0.02;
+                const isOnTarget = !c.isUnassigned && Math.abs(deltaDollar) <= tolerance;
+                const isUnder = !c.isUnassigned && deltaDollar > tolerance;
+                const isEditingTarget = editingCategoryKey === c.key;
+
+                return (
+                  <div
+                    key={c.key}
+                    className="rounded-md border border-border/60 px-3 py-3"
+                    style={{ backgroundColor: CATEGORY_COLORS[c.key]?.bg ?? "rgba(100,116,139,0.1)" }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="inline-block h-2 w-2 rounded-full"
+                        style={{ backgroundColor: CATEGORY_COLORS[c.key]?.bar ?? "rgba(100,116,139,0.5)" }}
                       />
+                      <p className="text-sm font-semibold" style={{ color: CATEGORY_COLORS[c.key]?.text ?? "inherit" }}>{c.name}</p>
                     </div>
-                  )}
-                </div>
-              ))}
+
+                    <div className="mt-3 space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-muted-foreground">Current</span>
+                        <span className="font-medium text-foreground">{fmt(c.value)} ({fmtPct(c.pct)})</span>
+                      </div>
+
+                      <div className="group/target flex items-center justify-between text-xs">
+                        <span className="text-muted-foreground">Target</span>
+                        {c.isUnassigned ? (
+                          <span className="font-medium text-muted-foreground">—</span>
+                        ) : isEditingTarget ? (
+                          <div className="flex items-center gap-1">
+                            <Input
+                              value={targetDraft}
+                              onChange={(e) => setTargetDraft(e.target.value)}
+                              onBlur={() => handleSaveCategoryTarget(c.key)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  handleSaveCategoryTarget(c.key);
+                                }
+                                if (e.key === "Escape") {
+                                  e.preventDefault();
+                                  setEditingCategoryKey(null);
+                                  setTargetDraft("");
+                                }
+                              }}
+                              className="h-6 w-16 px-2 text-xs"
+                              autoFocus
+                            />
+                            <span className="text-muted-foreground">%</span>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 font-medium text-foreground"
+                            onClick={() => handleStartCategoryTargetEdit(c.key, c.target)}
+                          >
+                            <span>{fmt(targetValue)} ({fmtPct(c.target)})</span>
+                            <Pencil className="h-3 w-3 opacity-0 transition-opacity group-hover/target:opacity-100" />
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-muted-foreground">Delta</span>
+                        {c.isUnassigned ? (
+                          <span className="text-muted-foreground">No target</span>
+                        ) : isOnTarget ? (
+                          <span className="text-muted-foreground">On target</span>
+                        ) : isUnder ? (
+                          <span className="text-emerald-600 dark:text-emerald-400">▼ {fmt(Math.abs(deltaDollar))} under</span>
+                        ) : (
+                          <span className="text-amber-600 dark:text-amber-400">▲ {fmt(Math.abs(deltaDollar))} over</span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between border-t border-border/60 pt-2 text-xs">
+                        <span className="text-muted-foreground">Positions</span>
+                        {c.isUnassigned ? (
+                          <span className="font-medium text-foreground">{c.count} unassigned</span>
+                        ) : (
+                          <span className="font-medium text-foreground">{c.count} / {c.targetPositions} positions</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </CardContent>
         </Card>
